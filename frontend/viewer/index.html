@@ -1,0 +1,1095 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<!-- v20260401-c: inline-onclick 廃止 / addEventListener 移行 -->
+<meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<title>週報ナレッジDB</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #f0f2f5;
+    --surface: #ffffff;
+    --border: #e2e6ea;
+    --accent: #2563eb;
+    --accent-light: #eff6ff;
+    --text-primary: #111827;
+    --text-secondary: #6b7280;
+    --text-muted: #9ca3af;
+    --success: #10b981;
+    --sidebar-w: 280px;
+    --radius: 10px;
+    --shadow: 0 1px 3px rgba(0,0,0,.08), 0 4px 12px rgba(0,0,0,.04);
+  }
+
+  html, body { height: 100%; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Meiryo", sans-serif;
+    background: var(--bg);
+    color: var(--text-primary);
+    font-size: 15px;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* ---- ヘッダー ---- */
+  .app-header {
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    padding: 0 24px;
+    height: 52px;
+    display: flex; align-items: center; gap: 12px;
+    flex-shrink: 0; z-index: 10;
+  }
+  .app-header .logo { font-size: 15px; font-weight: 700; color: var(--accent); }
+  .app-header .sub  { font-size: 12px; color: var(--text-muted); }
+
+  /* ---- レイアウト ---- */
+  .layout { display: flex; flex: 1; min-height: 0; overflow: hidden; }
+
+  /* ---- サイドバー ---- */
+  .sidebar {
+    width: var(--sidebar-w); flex-shrink: 0;
+    background: var(--surface); border-right: 1px solid var(--border);
+    display: flex; flex-direction: column; overflow: hidden;
+  }
+  .sidebar-title {
+    padding: 14px 16px 10px;
+    font-size: 11px; font-weight: 600;
+    text-transform: uppercase; letter-spacing: .06em;
+    color: var(--text-muted); border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+  .report-list { overflow-y: auto; flex: 1; }
+  .report-item {
+    padding: 12px 16px; cursor: pointer;
+    border-bottom: 1px solid var(--border);
+    transition: background .12s; position: relative;
+  }
+  .report-item:hover  { background: var(--bg); }
+  .report-item.active { background: var(--accent-light); }
+  .report-item.active::before {
+    content: ""; position: absolute;
+    left: 0; top: 0; bottom: 0; width: 3px;
+    background: var(--accent); border-radius: 0 2px 2px 0;
+  }
+  .item-store  { font-size: 13px; font-weight: 600; color: var(--text-primary); margin-bottom: 3px; }
+  .item-period { font-size: 12px; color: var(--text-secondary); margin-bottom: 4px; }
+  .item-meta   { display: flex; gap: 6px; align-items: center; }
+  .badge {
+    font-size: 10px; font-weight: 600;
+    padding: 2px 7px; border-radius: 99px;
+    background: var(--bg); color: var(--text-secondary);
+  }
+
+  /* ---- メインエリア ---- */
+  .main {
+    flex: 1; min-height: 0;
+    overflow-y: auto;
+    padding: 10px 16px 24px;
+  }
+  /* main の直接子要素に縦方向スペース */
+  .main > * + * { margin-top: 8px; }
+
+  /* 空状態 */
+  .empty-state {
+    height: 100%; display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    gap: 12px; color: var(--text-muted); text-align: center;
+  }
+  .empty-state .icon { font-size: 48px; }
+  .empty-state p { font-size: 14px; }
+
+  /* ---- サマリーバー ---- */
+  .summary-bar {
+    background: var(--surface);
+    border-radius: var(--radius); box-shadow: var(--shadow);
+    padding: 8px 16px;
+    display: flex; align-items: center; flex-wrap: nowrap; overflow: hidden;
+  }
+  .summary-bar .store-name {
+    font-size: 13px; font-weight: 700;
+    white-space: nowrap; margin-right: 10px; flex-shrink: 0;
+  }
+  .summary-bar .period {
+    font-size: 11px; color: var(--text-muted);
+    white-space: nowrap; margin-right: 12px; flex-shrink: 0;
+  }
+  .summary-bar .divider {
+    width: 1px; height: 16px; background: var(--border);
+    flex-shrink: 0; margin: 0 12px;
+  }
+  .stat-inline { display: flex; align-items: baseline; gap: 3px; flex-shrink: 0; }
+  .stat-inline .sl { font-size: 11px; color: var(--text-muted); white-space: nowrap; }
+  .stat-inline .sv { font-size: 13px; font-weight: 700; }
+  .stat-inline .su { font-size: 10px; color: var(--text-secondary); }
+  .stat-inline .sv.blue  { color: var(--accent); }
+  .stat-inline .sv.green { color: var(--success); }
+
+  /* ---- グラフカード ---- */
+  .card {
+    background: var(--surface);
+    border-radius: var(--radius); box-shadow: var(--shadow);
+    overflow: hidden;
+  }
+  .card-header {
+    padding: 12px 20px;
+    display: flex; align-items: center; gap: 10px;
+    cursor: pointer; user-select: none;
+    border-bottom: 1px solid transparent;
+    transition: border-color .15s;
+  }
+  .card-header.open { border-bottom-color: var(--border); }
+  .card-header h2 { font-size: 14px; font-weight: 700; flex: 1; }
+  .card-header .chip {
+    font-size: 11px; padding: 3px 10px;
+    border-radius: 99px; font-weight: 600;
+    background: var(--bg); color: var(--text-secondary);
+  }
+  .card-toggle {
+    font-size: 14px; color: var(--text-muted);
+    transition: transform .25s; display: inline-block;
+  }
+  .card-toggle.open { transform: rotate(180deg); }
+  .card-body { display: none; padding: 14px 16px; }
+  .card-body.open { display: block; }
+  .chart-wrap { position: relative; height: 240px; }
+
+  /* ---- 週タブカード ---- */
+  .week-tabs-card {
+    background: var(--surface);
+    border-radius: var(--radius); box-shadow: var(--shadow);
+    /* overflow: hidden を外す → 展開テキストがクリップされない */
+  }
+  .tab-nav {
+    display: flex; border-bottom: 2px solid var(--border);
+    overflow-x: auto; scrollbar-width: none;
+    border-radius: var(--radius) var(--radius) 0 0;
+    background: var(--surface);
+    /* 角丸を維持するため個別に clip */
+    overflow-y: hidden;
+  }
+  .tab-nav::-webkit-scrollbar { display: none; }
+  .tab-btn {
+    flex-shrink: 0; padding: 12px 20px;
+    font-size: 13px; font-weight: 600;
+    background: none; border: none; cursor: pointer;
+    color: var(--text-secondary);
+    border-bottom: 2px solid transparent; margin-bottom: -2px;
+    transition: color .15s; white-space: nowrap;
+  }
+  .tab-btn:hover  { color: var(--text-primary); }
+  .tab-btn.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+  .tab-panel { display: none; padding: 14px 16px 20px; }
+  .tab-panel.active { display: block; }
+
+  /* ---- 週計KPI ---- */
+  .week-kpi { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 16px; }
+  .kpi-pill {
+    background: var(--bg); border-radius: 6px; padding: 6px 14px;
+    display: flex; align-items: baseline; gap: 5px;
+  }
+  .kpi-pill .kp-label { font-size: 11px; color: var(--text-muted); white-space: nowrap; }
+  .kpi-pill .kp-value { font-size: 16px; font-weight: 700; }
+  .kpi-pill .kp-unit  { font-size: 11px; color: var(--text-secondary); }
+  .kpi-pill.blue  .kp-value { color: var(--accent); }
+  .kpi-pill.green .kp-value { color: var(--success); }
+
+  /* ---- テキストセクション ---- */
+  .text-sections { display: flex; flex-direction: column; gap: 16px; }
+  .section-label {
+    font-size: 12px; font-weight: 700;
+    padding: 4px 12px; border-radius: 4px;
+    display: inline-block; margin-bottom: 8px;
+  }
+  .section-label.s-sales { background: #dbeafe; color: #1d4ed8; }
+  .section-label.s-staff { background: #d1fae5; color: #065f46; }
+  .section-label.s-next  { background: #fef3c7; color: #92400e; }
+  .section-body {
+    font-size: 15px; line-height: 1.85;
+    color: var(--text-primary);
+    padding: 14px 16px;
+    background: var(--bg); border-radius: 8px;
+    border-left: 3px solid var(--border);
+    max-height: 380px;
+    overflow-y: auto;   /* 常にスクロール可能 */
+  }
+  .section-body.expanded { max-height: none; overflow-y: visible; }
+  .section-body.empty { color: var(--text-muted); font-style: italic; font-size: 13px; }
+  .text-line  { line-height: 1.85; white-space: pre-wrap; }
+  .blank-line { height: 0.7em; }
+  .hl-line {
+    font-weight: 700;
+    background: #fef2f2;
+    border: 1px solid #fca5a5;
+    border-left: 4px solid #ef4444;
+    color: #991b1b;
+    padding: 4px 10px;
+    margin: 4px 0;
+    border-radius: 4px;
+    line-height: 1.85;
+    white-space: pre-wrap;
+  }
+  .expand-btn {
+    display: inline-block; margin-top: 6px;
+    font-size: 12px; color: var(--accent);
+    background: none; border: none; cursor: pointer; padding: 0;
+  }
+  .expand-btn:hover { text-decoration: underline; }
+
+  /* ---- ローディング ---- */
+  .loading {
+    display: flex; align-items: center; justify-content: center;
+    padding: 60px; color: var(--text-muted); font-size: 13px; gap: 8px;
+  }
+  .spinner {
+    width: 18px; height: 18px;
+    border: 2px solid var(--border); border-top-color: var(--accent);
+    border-radius: 50%; animation: spin .7s linear infinite; flex-shrink: 0;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ---- サイドバーフィルター ---- */
+  .sidebar-filter {
+    padding: 8px 12px 10px; border-bottom: 1px solid var(--border);
+    flex-shrink: 0; display: flex; flex-direction: column; gap: 6px;
+  }
+  .filter-top { display: flex; gap: 6px; align-items: center; }
+  .filter-select {
+    flex: 1; font-size: 12px; padding: 5px 8px;
+    border: 1px solid var(--border); border-radius: 6px;
+    background: var(--surface); color: var(--text-primary); cursor: pointer;
+  }
+  .filter-select:focus { outline: none; border-color: var(--accent); }
+  .clear-btn {
+    width: 26px; height: 26px; flex-shrink: 0;
+    border: 1px solid var(--border); border-radius: 6px;
+    background: var(--surface); color: var(--text-muted);
+    cursor: pointer; font-size: 14px; line-height: 1;
+  }
+  .clear-btn:hover { background: var(--bg); color: var(--text-primary); }
+  .search-input {
+    width: 100%; font-size: 12px; padding: 5px 8px;
+    border: 1px solid var(--border); border-radius: 6px;
+    background: var(--bg); color: var(--text-primary);
+  }
+  .search-input:focus { outline: none; border-color: var(--accent); background: var(--surface); }
+
+  /* ---- 店舗グループ ---- */
+  .store-group {
+    padding: 10px 16px; border-bottom: 1px solid var(--border);
+  }
+  .store-group-name {
+    font-size: 13px; font-weight: 600; color: var(--text-primary); margin-bottom: 5px;
+  }
+  .role-badges { display: flex; gap: 6px; flex-wrap: wrap; }
+  .role-badge {
+    font-size: 11px; font-weight: 600; padding: 2px 10px;
+    border-radius: 99px; border: 1.5px solid transparent; cursor: pointer;
+    transition: background .12s, color .12s, border-color .12s;
+  }
+  .role-badge.tencho {
+    background: var(--accent-light); color: var(--accent); border-color: var(--accent-light);
+  }
+  .role-badge.tencho:hover  { background: #dbeafe; border-color: var(--accent); }
+  .role-badge.tencho.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .role-badge.fuku {
+    background: #f3e8ff; color: #7c3aed; border-color: #f3e8ff;
+  }
+  .role-badge.fuku:hover  { background: #ede9fe; border-color: #7c3aed; }
+  .role-badge.fuku.active { background: #7c3aed; color: #fff; border-color: #7c3aed; }
+
+  /* ---- 防災チェックリスト ---- */
+  .bousai-details { margin: 6px 0 0; }
+  .bousai-summary {
+    cursor: pointer; font-size: 12px; font-weight: 600;
+    color: var(--text-secondary); padding: 2px 0; list-style: none; user-select: none;
+  }
+  .bousai-summary::-webkit-details-marker { display: none; }
+  .bousai-grid {
+    display: grid; grid-template-columns: repeat(2, 1fr);
+    gap: 3px 16px; margin-top: 6px; padding: 8px 12px;
+    background: #f8fafc; border: 1px solid var(--border); border-radius: 6px;
+  }
+  .bousai-item { display: flex; align-items: center; gap: 6px; font-size: 12px; line-height: 1.6; }
+  .bousai-label { flex: 1; color: var(--text-secondary); }
+  .bousai-result { font-weight: 700; flex-shrink: 0; min-width: 18px; text-align: center; }
+  .bousai-item.ok .bousai-result { color: var(--success); }
+  .bousai-item.ng .bousai-result { color: #ef4444; }
+  .bousai-comment { font-size: 11px; color: var(--text-muted); margin-top: 4px; padding: 0 2px; }
+
+  /* ---- ヘッダー検索 ---- */
+  .header-search {
+    display: flex; align-items: center; gap: 6px;
+    margin-left: auto;
+  }
+  .header-search-input {
+    width: 220px; font-size: 13px; padding: 5px 10px;
+    border: 1px solid var(--border); border-radius: 6px;
+    background: var(--bg); color: var(--text-primary);
+    transition: border-color .15s, background .15s;
+  }
+  .header-search-input:focus {
+    outline: none; border-color: var(--accent); background: var(--surface);
+  }
+  .header-search-btn {
+    font-size: 12px; font-weight: 600; padding: 5px 14px;
+    border: 1px solid var(--accent); border-radius: 6px;
+    background: var(--accent); color: #fff; cursor: pointer;
+    transition: background .15s;
+  }
+  .header-search-btn:hover { background: #1d4ed8; }
+
+  /* ---- 検索モーダル ---- */
+  .search-modal {
+    position: fixed; inset: 0; z-index: 1000;
+    display: flex; align-items: flex-start; justify-content: center;
+    padding-top: 80px;
+  }
+  .search-modal.hidden { display: none; }
+  .search-modal-backdrop {
+    position: absolute; inset: 0;
+    background: rgba(0,0,0,.35); backdrop-filter: blur(2px);
+  }
+  .search-modal-content {
+    position: relative; z-index: 1;
+    background: var(--surface); border-radius: var(--radius);
+    box-shadow: 0 8px 32px rgba(0,0,0,.18);
+    width: 680px; max-width: calc(100vw - 32px);
+    max-height: calc(100vh - 120px);
+    display: flex; flex-direction: column;
+  }
+  .search-modal-header {
+    padding: 14px 18px; border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; gap: 10px; flex-shrink: 0;
+  }
+  .search-modal-header .modal-title {
+    font-size: 14px; font-weight: 700; flex: 1;
+  }
+  .close-modal-btn {
+    width: 28px; height: 28px; border: none; background: none;
+    font-size: 18px; color: var(--text-muted); cursor: pointer;
+    border-radius: 4px; line-height: 1;
+  }
+  .close-modal-btn:hover { background: var(--bg); color: var(--text-primary); }
+  .search-results {
+    overflow-y: auto; flex: 1; padding: 10px 12px;
+  }
+  .search-result-item {
+    padding: 10px 12px; border-radius: 8px; cursor: pointer;
+    border: 1px solid var(--border); margin-bottom: 8px;
+    transition: background .12s, border-color .12s;
+  }
+  .search-result-item:hover {
+    background: var(--accent-light); border-color: var(--accent);
+  }
+  .sr-meta {
+    display: flex; align-items: center; gap: 8px; margin-bottom: 5px; flex-wrap: wrap;
+  }
+  .sr-store { font-size: 13px; font-weight: 700; color: var(--text-primary); }
+  .sr-period { font-size: 11px; color: var(--text-muted); }
+  .sr-section {
+    font-size: 10px; font-weight: 600; padding: 2px 8px;
+    border-radius: 99px; background: var(--bg); color: var(--text-secondary);
+  }
+  .sr-snippet {
+    font-size: 12px; color: var(--text-secondary); line-height: 1.7;
+    white-space: pre-wrap; overflow-wrap: anywhere;
+  }
+  mark.hl-match {
+    background: #fef08a; color: #92400e; font-weight: 700;
+    border-radius: 2px; padding: 0 1px;
+  }
+  .search-empty {
+    text-align: center; padding: 40px; font-size: 13px; color: var(--text-muted);
+  }
+  .search-loading {
+    display: flex; align-items: center; justify-content: center;
+    gap: 8px; padding: 40px; font-size: 13px; color: var(--text-muted);
+  }
+
+  ::-webkit-scrollbar { width: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+  @media (max-width: 720px) {
+    .layout { flex-direction: column; }
+    .sidebar { width: 100%; height: 200px; border-right: none; border-bottom: 1px solid var(--border); }
+    .header-search-input { width: 140px; }
+  }
+</style>
+</head>
+<body>
+
+<header class="app-header">
+  <span class="logo">📊 週報ナレッジDB</span>
+  <span class="sub">販売部週報 閲覧システム</span>
+  <div class="header-search">
+    <input type="text" id="globalSearch" class="header-search-input" placeholder="テキスト全文検索...">
+    <button id="globalSearchBtn" class="header-search-btn">検索</button>
+  </div>
+</header>
+
+<!-- 検索結果モーダル -->
+<div id="searchModal" class="search-modal hidden" role="dialog" aria-modal="true">
+  <div class="search-modal-backdrop" id="searchModalBackdrop"></div>
+  <div class="search-modal-content">
+    <div class="search-modal-header">
+      <span class="modal-title" id="searchModalTitle">検索結果</span>
+      <button class="close-modal-btn" id="closeSearchModal" title="閉じる">×</button>
+    </div>
+    <div class="search-results" id="searchResultsBody"></div>
+  </div>
+</div>
+
+<div class="layout">
+  <aside class="sidebar">
+    <div class="sidebar-title">週報一覧</div>
+    <div class="sidebar-filter">
+      <div class="filter-top">
+        <select id="monthFilter" class="filter-select"></select>
+        <button id="clearFilter" class="clear-btn" title="フィルタークリア">×</button>
+      </div>
+      <select id="areaFilter" class="filter-select">
+        <option value="">全エリア</option>
+        <option value="1">第1エリア</option>
+        <option value="2">第2エリア</option>
+        <option value="3">第3エリア</option>
+      </select>
+      <input type="text" id="storeSearch" class="search-input" placeholder="🔍 店舗名を検索">
+    </div>
+    <div class="report-list" id="reportList">
+      <div class="loading"><div class="spinner"></div>読み込み中...</div>
+    </div>
+  </aside>
+
+  <main class="main" id="mainArea">
+    <div class="empty-state">
+      <div class="icon">📋</div>
+      <p>左の一覧から週報を選択してください</p>
+    </div>
+  </main>
+</div>
+
+<script>
+'use strict';
+const API = window.location.origin;
+const DAY_JA = ['日','月','火','水','木','金','土'];
+let salesChart   = null;
+let currentId    = null;
+let allReports   = [];
+let filterMonth  = '';
+let filterArea   = '';
+let filterSearch = '';
+
+/* ===== 日付ユーティリティ ===== */
+function parseDate(iso) {
+  const [y, m, d] = iso.split('-').map(Number);
+  return new Date(y, m - 1, d);
+}
+function fmtDate(iso) {
+  const d = parseDate(iso);
+  return `${d.getMonth()+1}/${d.getDate()}(${DAY_JA[d.getDay()]})`;
+}
+function fmtMD(d) {
+  return `${String(d.getMonth()+1).padStart(2,'0')}/${String(d.getDate()).padStart(2,'0')}`;
+}
+function fmtPeriod(start, end) {
+  const s = parseDate(start), e = parseDate(end);
+  return `${s.getFullYear()}年${s.getMonth()+1}月${s.getDate()}日 〜 ${e.getMonth()+1}月${e.getDate()}日`;
+}
+function isoWeek(d) {
+  const t = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  t.setDate(t.getDate() + 3 - (t.getDay() + 6) % 7);
+  const w1 = new Date(t.getFullYear(), 0, 4);
+  return 1 + Math.round(((t - w1) / 86400000 - 3 + (w1.getDay() + 6) % 7) / 7);
+}
+function isoMonday(d) {
+  const t = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  t.setDate(t.getDate() - ((t.getDay() + 6) % 7));
+  return t;
+}
+function groupByWeek(sales) {
+  const map = new Map();
+  for (const row of sales) {
+    const d  = parseDate(row.date);
+    const wn = isoWeek(d);
+    if (!map.has(wn)) map.set(wn, { weekNum: wn, monday: isoMonday(d), days: [] });
+    map.get(wn).days.push(row);
+  }
+  return [...map.values()].sort((a, b) => a.weekNum - b.weekNum);
+}
+
+/* ===== テキスト解析 ===== */
+function parseSections(content) {
+  if (!content) return { sales: '', staff: '', next: '', bousai: '' };
+
+  const bousaiIdx = content.indexOf('＜防災');
+  const staffIdx  = content.indexOf('＜人員管理報告');
+  const nextIdx   = content.indexOf('＜来期へのコメント');
+
+  const stripLeadingMarker = s => s.replace(/^＜[^＞]*＞[ \t]*\n?/, '').trim();
+
+  // 営業報告: 防災マーカーがあればそこで切る、なければ人員管理報告まで
+  const salesEnd = bousaiIdx > -1 ? bousaiIdx : (staffIdx > -1 ? staffIdx : content.length);
+  const sales = content.slice(0, salesEnd).trim();
+
+  // 防災チェックリスト: ＜防災＞〜＜人員管理報告＞
+  const bousaiEnd = staffIdx > -1 ? staffIdx : content.length;
+  const bousai = bousaiIdx > -1 ? stripLeadingMarker(content.slice(bousaiIdx, bousaiEnd)) : '';
+
+  const staff = staffIdx > -1
+    ? stripLeadingMarker(nextIdx > -1 ? content.slice(staffIdx, nextIdx) : content.slice(staffIdx))
+    : '';
+  const next  = nextIdx > -1 ? stripLeadingMarker(content.slice(nextIdx)) : '';
+
+  return { sales, staff, next, bousai };
+}
+
+/* 防災チェックリストをアイテム配列に変換 */
+function parseBousaiChecklist(text) {
+  if (!text) return { items: [], comment: '' };
+  const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+  const items = [];
+  let comment = '';
+  let i = 0;
+  while (i < lines.length) {
+    const line = lines[i];
+    const nextLine = i + 1 < lines.length ? lines[i + 1] : '';
+    if (/^[○×△]$/.test(nextLine)) {
+      items.push({ label: line, result: nextLine });
+      i += 2;
+    } else if (/^[ｺコ]ﾒﾝﾄ|^コメント/.test(line)) {
+      comment = line;
+      i++;
+    } else {
+      items.push({ label: line, result: '' });
+      i++;
+    }
+  }
+  return { items, comment };
+}
+
+/* 営業報告テキストの改行整形: 日付始まりの行の前に空行を挿入 */
+function formatReportText(text) {
+  if (!text) return '';
+  return text.replace(/\n([\d０-９]{1,2}日[（(])/g, '\n\n$1');
+}
+
+function escHtml(s) {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+/* テキストを行ごとのHTML要素に変換（★行は赤背景・太字、★文字は非表示） */
+function renderBodyHtml(text) {
+  if (!text) return '';
+  return text.split('\n').map(line => {
+    if (!line.trim()) return '<div class="blank-line"></div>';
+    if (line.startsWith('★')) {
+      return `<div class="hl-line">${escHtml(line.slice(1))}</div>`;
+    }
+    return `<div class="text-line">${escHtml(line)}</div>`;
+  }).join('');
+}
+
+/* ===== 一覧読み込み ===== */
+async function loadReports() {
+  try {
+    const res = await fetch(`${API}/reports`);
+    allReports = await res.json();
+    populateMonthSelector();
+    applyFilter();
+  } catch (e) {
+    document.getElementById('reportList').innerHTML =
+      `<div style="padding:16px;font-size:12px;color:#ef4444;">接続エラー: ${e.message}</div>`;
+  }
+}
+
+function populateMonthSelector() {
+  const months = [...new Set(allReports.map(r => {
+    const d = parseDate(r.week_end);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+  }))].sort().reverse();
+
+  const sel = document.getElementById('monthFilter');
+  sel.innerHTML = '<option value="">すべての月</option>' +
+    months.map(ym => {
+      const [y, m] = ym.split('-').map(Number);
+      return `<option value="${ym}">${y}年${m}月</option>`;
+    }).join('');
+
+  // 最新月をデフォルト選択
+  if (months.length) {
+    sel.value = months[0];
+    filterMonth = months[0];
+  }
+}
+
+function applyFilter() {
+  let list = allReports;
+
+  if (filterMonth) {
+    list = list.filter(r => {
+      const d = parseDate(r.week_end);
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}` === filterMonth;
+    });
+  }
+
+  if (filterArea) {
+    list = list.filter(r => r.area_id === Number(filterArea));
+  }
+
+  if (filterSearch) {
+    list = list.filter(r => r.store_name.includes(filterSearch));
+  }
+
+  renderList(list);
+}
+
+function renderList(reports) {
+  const el = document.getElementById('reportList');
+  if (!reports.length) {
+    el.innerHTML = '<div style="padding:20px;text-align:center;font-size:12px;color:var(--text-muted);">該当する週報がありません</div>';
+    return;
+  }
+
+  // store_name でグループ化（API の返却順を維持）
+  const groupMap = new Map();
+  for (const r of reports) {
+    if (!groupMap.has(r.store_name)) groupMap.set(r.store_name, []);
+    groupMap.get(r.store_name).push(r);
+  }
+  // グループ内: 店長 → 副店長 の順
+  for (const arr of groupMap.values()) {
+    arr.sort((a, b) => (a.submitter_role === '店長' ? -1 : 1));
+  }
+
+  el.innerHTML = [...groupMap.entries()].map(([storeName, arr]) => {
+    const badges = arr.map(r => {
+      const isFuku = r.submitter_role === '副店長';
+      const cls    = isFuku ? 'fuku' : 'tencho';
+      const label  = isFuku ? '副' : '店長';
+      const active = r.id === currentId ? ' active' : '';
+      return `<button class="role-badge ${cls}${active}" data-id="${r.id}">${label}</button>`;
+    }).join('');
+    return `<div class="store-group">
+      <div class="store-group-name">${storeName}</div>
+      <div class="role-badges">${badges}</div>
+    </div>`;
+  }).join('');
+
+  el.querySelectorAll('.role-badge').forEach(btn => {
+    btn.addEventListener('click', () => selectReport(Number(btn.dataset.id)));
+  });
+}
+
+/* ===== 詳細表示 ===== */
+async function selectReport(id) {
+  if (currentId === id) return;
+  currentId = id;
+
+  // バッジのアクティブ状態を更新
+  document.querySelectorAll('.role-badge').forEach(b =>
+    b.classList.toggle('active', Number(b.dataset.id) === id));
+
+  const main = document.getElementById('mainArea');
+  main.innerHTML = '<div class="loading"><div class="spinner"></div>読み込み中...</div>';
+
+  try {
+    const [salesRes, textsRes] = await Promise.all([
+      fetch(`${API}/reports/${id}/daily-sales`),
+      fetch(`${API}/reports/${id}/texts`),
+    ]);
+    const sales  = await salesRes.json();
+    const texts  = await textsRes.json();
+    const report = allReports.find(r => r.id === id);
+    renderDetail(report, sales, texts);
+  } catch (e) {
+    main.innerHTML = `<div class="loading" style="color:#ef4444;">エラー: ${e.message}</div>`;
+  }
+}
+
+function renderDetail(report, sales, texts) {
+  // 既存グラフを破棄
+  if (salesChart) { salesChart.destroy(); salesChart = null; }
+
+  const main = document.getElementById('mainArea');
+
+  const totalSales = sales.reduce((s, d) => s + (d.sales_amount || 0), 0);
+  const totalCust  = sales.reduce((s, d) => s + (d.customer_count || 0), 0);
+  const days       = sales.filter(d => d.sales_amount).length;
+  const avgSales   = days ? Math.round(totalSales / days) : 0;
+  const weeks      = groupByWeek(sales);
+  const contentTexts = texts.filter(t => t.content && t.content.trim());
+
+  // ---- HTML 生成（inline onclick は一切使わない） ----
+  const tabBtns = weeks.map((w, i) =>
+    `<button class="tab-btn${i === 0 ? ' active' : ''}" data-idx="${i}">第${w.weekNum}週(${fmtMD(w.monday)})</button>`
+  ).join('');
+
+  const tabPanels = weeks.map((w, i) => {
+    const wSales = w.days.reduce((s, d) => s + (d.sales_amount || 0), 0);
+    const wCust  = w.days.reduce((s, d) => s + (d.customer_count || 0), 0);
+    const wDays  = w.days.filter(d => d.sales_amount).length;
+    const wAvg   = wDays ? Math.round(wSales / wDays) : 0;
+    const sec    = parseSections(contentTexts[i] ? contentTexts[i].content : null);
+
+    const mkSection = (key, label, cls, text) => {
+      const id    = `sec-${i}-${key}`;
+      const empty = !text;
+      const body  = empty
+        ? '<em style="color:var(--text-muted)">記載なし</em>'
+        : renderBodyHtml(text);
+      return `<div class="text-section">
+        <span class="section-label ${cls}">${label}</span>
+        <div class="section-body${empty ? ' empty' : ''}" id="${id}">${body}</div>
+        ${!empty ? `<button class="expand-btn" data-target="${id}">▼ 全文を表示</button>` : ''}
+      </div>`;
+    };
+
+    // 防災チェックリストのコンパクト表示
+    const bousaiHtml = (() => {
+      const { items, comment } = parseBousaiChecklist(sec.bousai);
+      if (!items.length) return '';
+      const gridItems = items.map(({ label, result }) => {
+        const cls = result === '○' ? 'ok' : result ? 'ng' : '';
+        return `<div class="bousai-item ${cls}">
+          <span class="bousai-label">${escHtml(label)}</span>
+          <span class="bousai-result">${result || ''}</span>
+        </div>`;
+      }).join('');
+      const commentHtml = comment ? `<div class="bousai-comment">${escHtml(comment)}</div>` : '';
+      return `<details class="bousai-details">
+        <summary class="bousai-summary">▶ 防災チェックリスト（${items.length}項目）</summary>
+        <div class="bousai-grid">${gridItems}</div>
+        ${commentHtml}
+      </details>`;
+    })();
+
+    return `<div class="tab-panel${i === 0 ? ' active' : ''}" data-idx="${i}">
+      <div class="week-kpi">
+        <div class="kpi-pill blue">
+          <span class="kp-label">週計売上</span>
+          <span class="kp-value">${wSales.toLocaleString()}</span>
+          <span class="kp-unit">千円</span>
+        </div>
+        <div class="kpi-pill green">
+          <span class="kp-label">週計客数</span>
+          <span class="kp-value">${wCust.toLocaleString()}</span>
+          <span class="kp-unit">人</span>
+        </div>
+        <div class="kpi-pill">
+          <span class="kp-label">日商平均</span>
+          <span class="kp-value">${wAvg.toLocaleString()}</span>
+          <span class="kp-unit">千円</span>
+        </div>
+      </div>
+      <div class="text-sections">
+        ${mkSection('sales', '営業報告',   's-sales', formatReportText(sec.sales))}
+        ${bousaiHtml}
+        ${mkSection('staff', '人員管理',   's-staff', sec.staff)}
+        ${mkSection('next',  '来期コメント','s-next',  sec.next)}
+      </div>
+    </div>`;
+  }).join('');
+
+  main.innerHTML = `
+    <div class="summary-bar">
+      <span class="store-name">🏪 ${report.store_name}</span>
+      <span class="period">${fmtPeriod(report.week_start, report.week_end)}</span>
+      <span class="divider"></span>
+      <span class="stat-inline">
+        <span class="sl">月間売上</span><span class="sv blue">${totalSales.toLocaleString()}</span><span class="su">千円</span>
+      </span>
+      <span class="divider"></span>
+      <span class="stat-inline">
+        <span class="sl">月間客数</span><span class="sv green">${totalCust.toLocaleString()}</span><span class="su">人</span>
+      </span>
+      <span class="divider"></span>
+      <span class="stat-inline">
+        <span class="sl">日商平均</span><span class="sv">${avgSales.toLocaleString()}</span><span class="su">千円</span>
+      </span>
+    </div>
+
+    <div class="card" id="chartCard">
+      <div class="card-header" id="chartToggle">
+        <h2>📈 日別売上・客数グラフ</h2>
+        <span class="chip">${days}日分</span>
+        <span class="card-toggle" id="chartArrow">▼</span>
+      </div>
+      <div class="card-body" id="chartBody">
+        <div class="chart-wrap"><canvas id="salesChart"></canvas></div>
+      </div>
+    </div>
+
+    <div class="week-tabs-card">
+      <div class="tab-nav" id="tabNav">${tabBtns}</div>
+      ${tabPanels}
+    </div>`;
+
+  // ---- DOM 生成後にイベントリスナーを設定 ----
+  bindChartToggle(sales);
+  bindTabs();
+  bindExpandBtns();
+}
+
+/* ===== グラフ折りたたみ ===== */
+function bindChartToggle(sales) {
+  const header = document.getElementById('chartToggle');
+  const body   = document.getElementById('chartBody');
+  const arrow  = document.getElementById('chartArrow');
+  if (!header) return;
+
+  header.addEventListener('click', () => {
+    const isOpen = body.classList.toggle('open');
+    arrow.classList.toggle('open', isOpen);
+    header.classList.toggle('open', isOpen);
+    if (isOpen) {
+      // display:block になった次フレームで描画（サイズが確定してから）
+      requestAnimationFrame(() => drawChart(sales));
+    } else {
+      if (salesChart) { salesChart.destroy(); salesChart = null; }
+    }
+  });
+}
+
+/* ===== タブ切り替え ===== */
+function bindTabs() {
+  const nav = document.getElementById('tabNav');
+  if (!nav) return;
+
+  nav.querySelectorAll('.tab-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const idx = Number(btn.dataset.idx);
+      document.querySelectorAll('.tab-btn').forEach((b, i) =>
+        b.classList.toggle('active', i === idx));
+      document.querySelectorAll('.tab-panel').forEach(p =>
+        p.classList.toggle('active', Number(p.dataset.idx) === idx));
+    });
+  });
+}
+
+/* ===== 「全文を表示」展開 ===== */
+function bindExpandBtns() {
+  document.querySelectorAll('.expand-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const target = document.getElementById(btn.dataset.target);
+      if (!target) return;
+      const expanded = target.classList.toggle('expanded');
+      btn.textContent = expanded ? '▲ 折りたたむ' : '▼ 全文を表示';
+    });
+  });
+}
+
+/* ===== Chart.js 描画 ===== */
+function weatherIcon(w) {
+  if (!w) return '';
+  if (w.includes('晴') && w.includes('雨')) return '🌦';
+  if (w.includes('晴') && w.includes('曇')) return '⛅';
+  if (w.includes('晴')) return '☀️';
+  if (w.includes('雪')) return '❄️';
+  if (w.includes('雨')) return '🌧';
+  if (w.includes('曇')) return '☁️';
+  return '';
+}
+
+function drawChart(sales) {
+  if (salesChart) { salesChart.destroy(); salesChart = null; }
+  const canvas = document.getElementById('salesChart');
+  if (!canvas) return;
+
+  salesChart = new Chart(canvas, {
+    data: {
+      labels: sales.map(d => fmtDate(d.date)),
+      datasets: [
+        {
+          type: 'bar', label: '売上実績 (千円)',
+          data: sales.map(d => d.sales_amount || null),
+          backgroundColor: 'rgba(37,99,235,0.75)', borderColor: 'rgba(37,99,235,1)',
+          borderWidth: 1, borderRadius: 4, yAxisID: 'y', order: 4,
+        },
+        {
+          type: 'line', label: '客数 (人)',
+          data: sales.map(d => d.customer_count || null),
+          borderColor: 'rgba(16,185,129,1)', backgroundColor: 'rgba(16,185,129,0.1)',
+          borderWidth: 2, pointRadius: 3, pointBackgroundColor: 'rgba(16,185,129,1)',
+          tension: 0.3, fill: false, yAxisID: 'y2', order: 3,
+        },
+        {
+          type: 'line', label: '売上予算比 (%)',
+          data: sales.map(d => d.sales_budget_ratio != null ? Math.round(d.sales_budget_ratio * 100) : null),
+          borderColor: 'rgba(245,158,11,1)', backgroundColor: 'rgba(245,158,11,0.08)',
+          borderWidth: 2, pointRadius: 3, pointBackgroundColor: 'rgba(245,158,11,1)',
+          borderDash: [5, 3], tension: 0.3, fill: false, yAxisID: 'y3', order: 2,
+        },
+        {
+          type: 'line', label: '客数昨対比 (%)',
+          data: sales.map(d => (d.customer_count && d.customer_count_prev_year)
+            ? Math.round(d.customer_count / d.customer_count_prev_year * 100)
+            : null),
+          borderColor: 'rgba(139,92,246,1)', backgroundColor: 'rgba(139,92,246,0.08)',
+          borderWidth: 2, pointRadius: 3, pointBackgroundColor: 'rgba(139,92,246,1)',
+          borderDash: [5, 3], tension: 0.3, fill: false, yAxisID: 'y3', order: 1,
+        },
+      ],
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { position: 'top', labels: { font: { size: 12 }, boxWidth: 14, padding: 16 } },
+        tooltip: {
+          callbacks: {
+            label: ctx => {
+              const v = ctx.parsed.y;
+              if (v === null) return null;
+              if (ctx.datasetIndex === 0) return ` 売上: ${v.toLocaleString()} 千円`;
+              if (ctx.datasetIndex === 1) return ` 客数: ${v.toLocaleString()} 人`;
+              return ` ${ctx.dataset.label}: ${v}%`;
+            },
+            afterBody: items => {
+              const w = sales[items[0]?.dataIndex]?.weather;
+              return w ? [`天候: ${weatherIcon(w)} ${w}`] : [];
+            },
+          },
+        },
+      },
+      scales: {
+        x: { ticks: { font: { size: 11 }, maxRotation: 45 }, grid: { color: 'rgba(0,0,0,.04)' } },
+        y: {
+          position: 'left',
+          title: { display: true, text: '売上 (千円)', font: { size: 11 } },
+          ticks: { font: { size: 11 } }, grid: { color: 'rgba(0,0,0,.06)' },
+        },
+        y2: {
+          position: 'right',
+          title: { display: true, text: '客数 (人)', font: { size: 11 }, color: 'rgba(16,185,129,1)' },
+          ticks: { font: { size: 11 }, color: 'rgba(16,185,129,1)' },
+          grid: { drawOnChartArea: false },
+        },
+        y3: {
+          position: 'right',
+          min: 70, max: 130,
+          title: { display: true, text: '予算比/昨対比 (%)', font: { size: 11 }, color: 'rgba(245,158,11,1)' },
+          ticks: {
+            font: { size: 11 }, color: 'rgba(245,158,11,1)',
+            callback: v => v + '%',
+          },
+          grid: { drawOnChartArea: false },
+        },
+      },
+    },
+  });
+}
+
+/* ===== 全文検索 ===== */
+function escRegex(s) { return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
+
+function highlightSnippet(snippet, q) {
+  const escaped = escHtml(snippet);
+  const escapedQ = escHtml(q);
+  const pattern  = new RegExp(escRegex(escapedQ), 'gi');
+  return escaped.replace(pattern, m => `<mark class="hl-match">${m}</mark>`);
+}
+
+function openSearchModal() {
+  document.getElementById('searchModal').classList.remove('hidden');
+}
+function closeSearchModal() {
+  document.getElementById('searchModal').classList.add('hidden');
+}
+
+async function executeSearch() {
+  const q = document.getElementById('globalSearch').value.trim();
+  if (!q) return;
+
+  openSearchModal();
+  document.getElementById('searchModalTitle').textContent = `検索結果: "${q}"`;
+  const body = document.getElementById('searchResultsBody');
+  body.innerHTML = '<div class="search-loading"><div class="spinner"></div>検索中...</div>';
+
+  const monthParam = filterMonth ? `&month=${filterMonth}` : '';
+  try {
+    const res  = await fetch(`${API}/search?q=${encodeURIComponent(q)}${monthParam}`);
+    const data = await res.json();
+    if (!res.ok) {
+      body.innerHTML = `<div class="search-empty">エラー: ${escHtml(data.detail || res.statusText)}</div>`;
+      return;
+    }
+    renderSearchResults(data, q);
+  } catch (e) {
+    body.innerHTML = `<div class="search-empty">通信エラー: ${escHtml(e.message)}</div>`;
+  }
+}
+
+function renderSearchResults(results, q) {
+  const body = document.getElementById('searchResultsBody');
+  if (!results.length) {
+    body.innerHTML = '<div class="search-empty">該当する週報テキストが見つかりませんでした。</div>';
+    return;
+  }
+
+  body.innerHTML = results.map(r => {
+    const period = `${r.week_start} 〜 ${r.week_end}`;
+    const snip   = highlightSnippet(r.snippet, q);
+    return `<div class="search-result-item" data-id="${r.report_id}">
+      <div class="sr-meta">
+        <span class="sr-store">${escHtml(r.store_name)}</span>
+        <span class="sr-period">${escHtml(period)}</span>
+        <span class="sr-section">${escHtml(r.sheet_name)}</span>
+      </div>
+      <div class="sr-snippet">${snip}</div>
+    </div>`;
+  }).join('');
+
+  body.querySelectorAll('.search-result-item').forEach(item => {
+    item.addEventListener('click', () => {
+      closeSearchModal();
+      selectReport(Number(item.dataset.id));
+    });
+  });
+}
+
+/* ===== 初期化 ===== */
+document.getElementById('monthFilter').addEventListener('change', e => {
+  filterMonth = e.target.value;
+  applyFilter();
+});
+document.getElementById('areaFilter').addEventListener('change', e => {
+  filterArea = e.target.value;
+  applyFilter();
+});
+document.getElementById('storeSearch').addEventListener('input', e => {
+  filterSearch = e.target.value.trim();
+  applyFilter();
+});
+document.getElementById('clearFilter').addEventListener('click', () => {
+  filterMonth  = '';
+  filterArea   = '';
+  filterSearch = '';
+  document.getElementById('monthFilter').value = '';
+  document.getElementById('areaFilter').value  = '';
+  document.getElementById('storeSearch').value = '';
+  applyFilter();
+});
+
+document.getElementById('globalSearchBtn').addEventListener('click', executeSearch);
+document.getElementById('globalSearch').addEventListener('keydown', e => {
+  if (e.key === 'Enter') executeSearch();
+  if (e.key === 'Escape') closeSearchModal();
+});
+document.getElementById('closeSearchModal').addEventListener('click', closeSearchModal);
+document.getElementById('searchModalBackdrop').addEventListener('click', closeSearchModal);
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') closeSearchModal();
+});
+
+loadReports();
+</script>
+</body>
+</html>

@@ -1,0 +1,21 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(pip install:*)",
+      "Bash(uvicorn backend.main:app:*)",
+      "Bash(python3:*)",
+      "Bash(python:*)",
+      "Bash(curl:*)",
+      "Bash(taskkill /F /IM python.exe)",
+      "Bash(pkill -f uvicorn)",
+      "Bash(netstat -ano)",
+      "Bash(xargs rm:*)",
+      "Bash(find /c/Users/landrome/weekly-report-kb -name \"*.pyc\" -delete)",
+      "Bash(ls -lh data/*.xlsx)",
+      "Bash(pkill -f \"uvicorn.*9000\")",
+      "Bash(grep LISTEN uvicorn backend.main:app --port 9100)",
+      "Bash(pkill -f \"uvicorn.*9100\")",
+      "Bash(del:*)"
+    ]
+  }
+}
