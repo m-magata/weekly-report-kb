@@ -33,6 +33,55 @@ class SkipFileError(Exception):
 
 import openpyxl
 from openpyxl.worksheet.worksheet import Worksheet
+import xlrd as _xlrd
+
+
+# ---------------------------------------------------------------------------
+# xlrd ラッパー（.xls ファイル用 / openpyxl ライクなインターフェース）
+# ---------------------------------------------------------------------------
+
+class _XlrdCellWrapper:
+    """xlrd セルをopenpyxlライクにラップ（書式情報なし）。"""
+    __slots__ = ("value", "fill")
+
+    def __init__(self, raw_value):
+        # xlrd の空セル（''）を None に統一
+        self.value = None if raw_value == "" else raw_value
+        self.fill = None  # xls は書式未取得のため黒背景判定は常に False
+
+
+class _XlrdSheetWrapper:
+    """xlrd シートをopenpyxlライクにラップ。"""
+
+    def __init__(self, xlrd_sheet):
+        self._sheet = xlrd_sheet
+
+    def iter_rows(self, min_row: int = 1, max_row: int | None = None, values_only: bool = True):
+        nrows = self._sheet.nrows
+        end_row = nrows if max_row is None else min(max_row, nrows)
+        for r in range(min_row - 1, end_row):
+            raw = self._sheet.row_values(r)
+            if values_only:
+                yield tuple(None if v == "" else v for v in raw)
+            else:
+                yield [_XlrdCellWrapper(v) for v in raw]
+
+
+class _XlrdWorkbookWrapper:
+    """xlrd Workbook をopenpyxlライクにラップ。"""
+
+    def __init__(self, xlrd_book):
+        self._book = xlrd_book
+
+    @property
+    def sheetnames(self) -> list[str]:
+        return self._book.sheet_names()
+
+    def __contains__(self, name: str) -> bool:
+        return name in self._book.sheet_names()
+
+    def __getitem__(self, name: str) -> _XlrdSheetWrapper:
+        return _XlrdSheetWrapper(self._book.sheet_by_name(name))
 
 
 # 「週報①」〜「週報⑥」に対応
@@ -80,6 +129,8 @@ class ParsedReport:
     week_end: date
     source_filename: str
     submitter_role: str = "店長"  # '店長' or '副店長'
+    report_year: int | None = None
+    report_month: int | None = None
     daily_sales: list[DailySalesRecord] = field(default_factory=list)
     report_texts: list[ReportTextRecord] = field(default_factory=list)
 
@@ -92,6 +143,10 @@ def parse_excel(filepath: str | Path) -> ParsedReport:
     """
     path = Path(filepath)
 
+    # Excel 一時ファイル（~$ で始まる）はスキップ
+    if path.name.startswith("~$"):
+        raise SkipFileError(f"Excel一時ファイルのためスキップします: {path.name}")
+
     # store_code='0000' のファイルはフォーマットファイルのためスキップ
     m = re.match(r"^(\d+)", path.name)
     if m and m.group(1).zfill(4) == "0000":
@@ -99,7 +154,12 @@ def parse_excel(filepath: str | Path) -> ParsedReport:
 
     is_fuku = _is_fuku_tencho(path.name)
 
-    wb = openpyxl.load_workbook(path, data_only=True)
+    suffix = path.suffix.lower()
+    if suffix == ".xls":
+        wb = _XlrdWorkbookWrapper(_xlrd.open_workbook(str(path)))
+    else:
+        wb = openpyxl.load_workbook(path, data_only=True)
+
     if "売上進捗表" not in wb.sheetnames:
         raise SkipFileError(f"週報フォーマット外のファイルのためスキップします: {path.name}")
     store_name, year, month = _extract_header_info(wb["売上進捗表"])
@@ -112,6 +172,8 @@ def parse_excel(filepath: str | Path) -> ParsedReport:
     report_texts = _parse_report_sheets(wb)
     week_start, week_end = _infer_week_range(daily_sales)
 
+    ym = _extract_report_ym_from_filename(path.name)
+
     return ParsedReport(
         store_name=store_name,
         manager_name=None,
@@ -119,6 +181,8 @@ def parse_excel(filepath: str | Path) -> ParsedReport:
         week_end=week_end,
         source_filename=path.name,
         submitter_role="副店長" if is_fuku else "店長",
+        report_year=ym[0] if ym else None,
+        report_month=ym[1] if ym else None,
         daily_sales=daily_sales,
         report_texts=report_texts,
     )
@@ -351,6 +415,31 @@ def _cell_has_dark_fill(cell) -> bool:
 # ---------------------------------------------------------------------------
 # ユーティリティ
 # ---------------------------------------------------------------------------
+
+def _extract_report_ym_from_filename(filename: str) -> tuple[int, int] | None:
+    """ファイル名から年月を抽出する。
+
+    対応パターン（各種ダッシュ記号を許容）:
+      '065 販売部週報 26-03.xlsx' → (2026, 3)
+      '073販売部週報25-10.xlsx'   → (2025, 10)
+      '006副店長販売部週報25ー1.xls' → (2025, 1)
+
+    ファイル名に含まれる 2桁年 + ダッシュ + 1〜2桁月 パターンを全て検索し、
+    最後のマッチを採用する（先頭の店舗コード数字との混同を避けるため）。
+    """
+    stem = Path(filename).stem
+    # 各種ダッシュ: ハイフン / 全角マイナス / 長音記号（ーｰ）
+    pattern = re.compile(r'(\d{2})\s*[－ｰーｰ\-]\s*(\d{1,2})')
+    matches = pattern.findall(stem)
+    if not matches:
+        return None
+    yy, mm = matches[-1]
+    year = 2000 + int(yy)
+    month = int(mm)
+    if not (1 <= month <= 12):
+        return None
+    return year, month
+
 
 def _infer_week_range(records: list[DailySalesRecord]) -> tuple[date, date]:
     if not records:

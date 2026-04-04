@@ -1,0 +1,488 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate">
+<title>週報アップロード — 週報ナレッジDB</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #f0f2f5;
+    --surface: #ffffff;
+    --border: #e2e6ea;
+    --accent: #2563eb;
+    --accent-light: #eff6ff;
+    --text-primary: #111827;
+    --text-secondary: #6b7280;
+    --text-muted: #9ca3af;
+    --success: #10b981;
+    --danger: #ef4444;
+    --warn: #f59e0b;
+    --radius: 10px;
+    --shadow: 0 1px 3px rgba(0,0,0,.08), 0 4px 12px rgba(0,0,0,.04);
+  }
+
+  html, body {
+    height: 100%;
+    font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Meiryo", sans-serif;
+    background: var(--bg); color: var(--text-primary); font-size: 15px;
+  }
+  body { display: flex; flex-direction: column; }
+
+  /* ---- ヘッダー ---- */
+  .app-header {
+    background: var(--surface); border-bottom: 1px solid var(--border);
+    padding: 0 24px; height: 52px;
+    display: flex; align-items: center; gap: 12px; flex-shrink: 0; z-index: 10;
+  }
+  .app-header .logo { font-size: 15px; font-weight: 700; color: var(--accent); }
+  .app-header .sub  { font-size: 12px; color: var(--text-muted); }
+  .header-nav { margin-left: auto; display: flex; gap: 8px; }
+  .nav-link {
+    font-size: 12px; font-weight: 600; padding: 5px 14px;
+    border-radius: 6px; border: 1px solid var(--border);
+    background: var(--surface); color: var(--text-secondary);
+    text-decoration: none; transition: background .12s, color .12s;
+  }
+  .nav-link:hover { background: var(--bg); color: var(--text-primary); }
+  .nav-link.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+
+  /* ---- メインコンテンツ ---- */
+  .main {
+    flex: 1; overflow-y: auto;
+    padding: 28px 24px 40px;
+    display: flex; flex-direction: column; align-items: center; gap: 20px;
+  }
+  .content-box {
+    width: 100%; max-width: 900px;
+    background: var(--surface); border-radius: var(--radius); box-shadow: var(--shadow);
+  }
+  .box-header {
+    padding: 14px 20px; border-bottom: 1px solid var(--border);
+    font-size: 14px; font-weight: 700;
+  }
+  .box-body { padding: 20px; }
+
+  /* ---- ドロップゾーン ---- */
+  .drop-zone {
+    border: 2px dashed var(--border); border-radius: 8px;
+    padding: 32px 20px; text-align: center;
+    transition: border-color .15s, background .15s;
+    user-select: none;
+  }
+  .drop-zone.dragover { border-color: var(--accent); background: var(--accent-light); }
+  .drop-icon { font-size: 36px; margin-bottom: 8px; }
+  .drop-main { font-size: 14px; font-weight: 600; color: var(--text-primary); margin-bottom: 4px; }
+  .drop-sub  { font-size: 12px; color: var(--text-muted); margin-bottom: 16px; }
+
+  /* ファイル/フォルダ選択ボタン */
+  .select-btns { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
+  .sel-btn {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 7px 18px; border-radius: 6px; font-size: 13px; font-weight: 600;
+    border: 1px solid var(--border); background: var(--surface); color: var(--text-primary);
+    cursor: pointer; transition: background .12s, border-color .12s;
+  }
+  .sel-btn:hover { background: var(--bg); border-color: var(--accent); color: var(--accent); }
+
+  /* ---- 選択ファイル一覧 ---- */
+  .file-list { margin-top: 14px; display: flex; flex-direction: column; gap: 5px; }
+  .file-chip {
+    display: flex; align-items: center; gap: 8px;
+    padding: 6px 12px; background: var(--bg); border-radius: 6px;
+    border: 1px solid var(--border); font-size: 12px;
+  }
+  .chip-path {
+    flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    display: flex; gap: 4px; align-items: center;
+  }
+  .chip-dir  { color: var(--text-muted); }
+  .chip-name { font-weight: 500; }
+  .chip-size { font-size: 11px; color: var(--text-muted); flex-shrink: 0; }
+  .remove-btn {
+    background: none; border: none; cursor: pointer;
+    font-size: 15px; color: var(--text-muted); line-height: 1; flex-shrink: 0; padding: 0 2px;
+  }
+  .remove-btn:hover { color: var(--danger); }
+
+  /* ---- アクションエリア ---- */
+  .action-row { display: flex; align-items: center; gap: 12px; margin-top: 18px; }
+  .upload-btn {
+    padding: 9px 28px; border-radius: 7px; border: none; cursor: pointer;
+    font-size: 14px; font-weight: 700; background: var(--accent); color: #fff;
+    transition: background .15s, opacity .15s;
+  }
+  .upload-btn:hover:not(:disabled) { background: #1d4ed8; }
+  .upload-btn:disabled { opacity: .45; cursor: not-allowed; }
+  .action-hint { font-size: 12px; color: var(--text-muted); }
+
+  /* ---- 結果テーブル ---- */
+  .result-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .result-table th {
+    text-align: left; padding: 8px 12px;
+    font-size: 11px; font-weight: 600; text-transform: uppercase;
+    letter-spacing: .04em; color: var(--text-muted);
+    border-bottom: 1px solid var(--border); white-space: nowrap;
+  }
+  .result-table td {
+    padding: 9px 12px; border-bottom: 1px solid var(--border); vertical-align: middle;
+  }
+  .result-table tr:last-child td { border-bottom: none; }
+
+  .td-path {
+    font-family: "Courier New", monospace; font-size: 11px;
+    max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .td-path .dir  { color: var(--text-muted); }
+  .td-path .fname { color: var(--text-primary); font-weight: 500; }
+  .td-store  { max-width: 130px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 500; }
+  .td-period { white-space: nowrap; font-size: 12px; color: var(--text-secondary); }
+  .td-reason { font-size: 12px; color: var(--text-muted); max-width: 240px;
+               overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .td-reason.err { color: var(--danger); }
+
+  /* ステータスバッジ */
+  .badge {
+    display: inline-block; font-size: 10px; font-weight: 700;
+    padding: 2px 8px; border-radius: 99px; white-space: nowrap;
+  }
+  .badge-ok   { background: #d1fae5; color: #065f46; }
+  .badge-skip { background: #f3f4f6; color: var(--text-secondary); }
+  .badge-dup  { background: var(--accent-light); color: var(--accent); }
+  .badge-err  { background: #fee2e2; color: #991b1b; }
+
+  /* ---- サマリー行 ---- */
+  .summary-row { display: flex; gap: 20px; padding: 12px 0 4px; flex-wrap: wrap; }
+  .sum-item { display: flex; align-items: baseline; gap: 4px; }
+  .sum-label { font-size: 12px; color: var(--text-muted); }
+  .sum-val   { font-size: 18px; font-weight: 700; }
+  .sum-val.green { color: var(--success); }
+  .sum-val.red   { color: var(--danger); }
+  .sum-val.blue  { color: var(--accent); }
+  .sum-val.gray  { color: var(--text-secondary); }
+
+  /* ---- 完了バナー ---- */
+  .done-banner {
+    display: flex; align-items: center; gap: 14px;
+    padding: 14px 20px; background: #d1fae5; border-radius: 8px;
+    border: 1px solid #6ee7b7; font-size: 14px; font-weight: 600; color: #065f46;
+  }
+  .done-banner a {
+    margin-left: auto; font-size: 13px; font-weight: 700;
+    padding: 6px 18px; border-radius: 6px;
+    background: var(--success); color: #fff; text-decoration: none; transition: background .12s;
+  }
+  .done-banner a:hover { background: #059669; }
+
+  /* ---- ローディング ---- */
+  .spinner {
+    width: 16px; height: 16px;
+    border: 2px solid var(--border); border-top-color: var(--accent);
+    border-radius: 50%; animation: spin .7s linear infinite; flex-shrink: 0; display: inline-block;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  ::-webkit-scrollbar { width: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+</style>
+</head>
+<body>
+
+<header class="app-header">
+  <span class="logo">📊 週報ナレッジDB</span>
+  <span class="sub">アップロード</span>
+  <nav class="header-nav">
+    <a href="/upload/" class="nav-link active">アップロード</a>
+    <a href="/viewer/" class="nav-link">閲覧画面</a>
+  </nav>
+</header>
+
+<main class="main">
+
+  <!-- ファイル選択ボックス -->
+  <div class="content-box" id="selectBox">
+    <div class="box-header">📁 ファイルを選択</div>
+    <div class="box-body">
+      <div class="drop-zone" id="dropZone">
+        <div class="drop-icon">📂</div>
+        <div class="drop-main">ここにファイルをドラッグ＆ドロップ</div>
+        <div class="drop-sub">.xlsx / .xls 形式に対応　フォルダ選択でサブフォルダも一括処理</div>
+        <div class="select-btns">
+          <button class="sel-btn" id="btnFile">
+            <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+              <polyline points="14 2 14 8 20 8"/>
+            </svg>
+            ファイルを選択
+          </button>
+          <button class="sel-btn" id="btnFolder">
+            <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+              <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+            </svg>
+            フォルダを選択
+          </button>
+        </div>
+        <!-- hidden inputs -->
+        <input type="file" id="fileInput"   accept=".xlsx,.xls" multiple style="display:none">
+        <input type="file" id="folderInput" webkitdirectory    style="display:none">
+      </div>
+      <div class="file-list" id="fileList"></div>
+      <div class="action-row">
+        <button class="upload-btn" id="uploadBtn" disabled>▲ アップロード開始</button>
+        <span class="action-hint" id="actionHint">ファイルを選択してください</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- 処理結果 -->
+  <div class="content-box" id="resultBox" style="display:none;">
+    <div class="box-header" id="resultHeader">処理結果</div>
+    <div class="box-body">
+      <div class="summary-row" id="summaryRow" style="display:none;"></div>
+      <div id="doneBanner" style="display:none; margin-bottom:14px;"></div>
+      <table class="result-table">
+        <thead>
+          <tr>
+            <th>結果</th>
+            <th>ファイル / パス</th>
+            <th>店舗名</th>
+            <th>期間</th>
+            <th>備考</th>
+          </tr>
+        </thead>
+        <tbody id="resultBody"></tbody>
+      </table>
+    </div>
+  </div>
+
+</main>
+
+<script>
+'use strict';
+
+const API = window.location.origin;
+
+/* ===== ファイル管理 =====
+   selectedFiles: Map<relPath, {file, relPath}>
+   relPath = webkitRelativePath || file.name
+*/
+const selectedFiles = new Map();
+
+function fmtSize(bytes) {
+  if (bytes < 1024)        return bytes + ' B';
+  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(0) + ' KB';
+  return (bytes / 1024 / 1024).toFixed(1) + ' MB';
+}
+
+function pathParts(relPath) {
+  const idx = relPath.lastIndexOf('/');
+  return idx < 0
+    ? { dir: '', name: relPath }
+    : { dir: relPath.slice(0, idx + 1), name: relPath.slice(idx + 1) };
+}
+
+function renderFileList() {
+  const el = document.getElementById('fileList');
+  const btn = document.getElementById('uploadBtn');
+  const hint = document.getElementById('actionHint');
+
+  if (selectedFiles.size === 0) {
+    el.innerHTML = '';
+    btn.disabled = true;
+    hint.textContent = 'ファイルを選択してください';
+    return;
+  }
+
+  el.innerHTML = [...selectedFiles.values()].map(({ file, relPath }) => {
+    const { dir, name } = pathParts(relPath);
+    const dirHtml = dir ? `<span class="chip-dir">${escHtml(dir)}</span>` : '';
+    return `<div class="file-chip" data-key="${escAttr(relPath)}">
+      <div class="chip-path">${dirHtml}<span class="chip-name">${escHtml(name)}</span></div>
+      <span class="chip-size">${fmtSize(file.size)}</span>
+      <button class="remove-btn" data-key="${escAttr(relPath)}" title="削除">×</button>
+    </div>`;
+  }).join('');
+
+  el.querySelectorAll('.remove-btn').forEach(b =>
+    b.addEventListener('click', () => { selectedFiles.delete(b.dataset.key); renderFileList(); })
+  );
+
+  btn.disabled = false;
+  hint.textContent = `${selectedFiles.size} ファイル選択中`;
+}
+
+function addFiles(fileList, useRelPath) {
+  for (const f of fileList) {
+    const ext = f.name.split('.').pop().toLowerCase();
+    if (!['xlsx', 'xls'].includes(ext)) continue;
+    const relPath = (useRelPath && f.webkitRelativePath) ? f.webkitRelativePath : f.name;
+    selectedFiles.set(relPath, { file: f, relPath });
+  }
+  renderFileList();
+}
+
+/* ===== ボタンイベント ===== */
+document.getElementById('btnFile').addEventListener('click',   () => document.getElementById('fileInput').click());
+document.getElementById('btnFolder').addEventListener('click', () => document.getElementById('folderInput').click());
+
+document.getElementById('fileInput').addEventListener('change', e => {
+  addFiles(e.target.files, false);
+  e.target.value = '';
+});
+document.getElementById('folderInput').addEventListener('change', e => {
+  addFiles(e.target.files, true);
+  e.target.value = '';
+});
+
+/* ===== ドラッグ＆ドロップ ===== */
+const dropZone = document.getElementById('dropZone');
+['dragenter', 'dragover'].forEach(ev =>
+  dropZone.addEventListener(ev, e => { e.preventDefault(); dropZone.classList.add('dragover'); })
+);
+['dragleave', 'drop'].forEach(ev =>
+  dropZone.addEventListener(ev, e => { e.preventDefault(); dropZone.classList.remove('dragover'); })
+);
+dropZone.addEventListener('drop', e => addFiles(e.dataTransfer.files, false));
+
+/* ===== アップロード処理 ===== */
+document.getElementById('uploadBtn').addEventListener('click', startUpload);
+
+async function startUpload() {
+  if (selectedFiles.size === 0) return;
+
+  const uploadBtn = document.getElementById('uploadBtn');
+  uploadBtn.disabled = true;
+  uploadBtn.textContent = '処理中...';
+
+  document.getElementById('resultBox').style.display = '';
+  document.getElementById('resultHeader').innerHTML =
+    '<div style="display:flex;align-items:center;gap:8px;"><div class="spinner"></div>処理中...</div>';
+  document.getElementById('resultBody').innerHTML = '';
+  document.getElementById('summaryRow').style.display = 'none';
+  document.getElementById('doneBanner').style.display = 'none';
+
+  // relPath → entry のマップ（filename → relPath の逆引き用）
+  // 同名ファイルが複数フォルダにある場合は最初にヒットしたものを使用
+  const fnameToRelPath = new Map();
+  const formData = new FormData();
+  for (const { file, relPath } of selectedFiles.values()) {
+    formData.append('files', file, file.name);
+    if (!fnameToRelPath.has(file.name)) fnameToRelPath.set(file.name, relPath);
+  }
+
+  const counts = { ok: 0, skip: 0, dup: 0, err: 0 };
+
+  try {
+    const res = await fetch(`${API}/upload/batch`, { method: 'POST', body: formData });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: res.statusText }));
+      throw new Error(err.detail || res.statusText);
+    }
+
+    const reader  = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() ?? '';
+      for (const line of lines) {
+        if (!line.trim()) continue;
+        try { appendResultRow(JSON.parse(line), fnameToRelPath, counts); } catch { /* ignore */ }
+      }
+    }
+    if (buffer.trim()) {
+      try { appendResultRow(JSON.parse(buffer), fnameToRelPath, counts); } catch { /* ignore */ }
+    }
+
+    showSummary(counts);
+    showDoneBanner();
+    document.getElementById('resultHeader').textContent = '処理結果';
+  } catch (e) {
+    document.getElementById('resultHeader').textContent = '処理結果';
+    appendErrorRow(`通信エラー: ${e.message}`);
+  }
+
+  uploadBtn.disabled = false;
+  uploadBtn.textContent = '▲ アップロード開始';
+}
+
+function appendResultRow(data, fnameToRelPath, counts) {
+  const tbody = document.getElementById('resultBody');
+  const s = data.status;
+  counts[s] = (counts[s] || 0) + 1;
+
+  const badgeMap = {
+    ok:   '<span class="badge badge-ok">OK</span>',
+    skip: '<span class="badge badge-skip">SKIP</span>',
+    dup:  '<span class="badge badge-dup">登録済</span>',
+    err:  '<span class="badge badge-err">ERR</span>',
+  };
+  const badge = badgeMap[s] || `<span class="badge badge-skip">${escHtml(s)}</span>`;
+
+  // ファイルパス表示（サブフォルダを含む場合は分けて表示）
+  const relPath = fnameToRelPath.get(data.filename) || data.filename;
+  const { dir, name } = pathParts(relPath);
+  const pathHtml = dir
+    ? `<span class="dir">${escHtml(dir)}</span><span class="fname">${escHtml(name)}</span>`
+    : `<span class="fname">${escHtml(name)}</span>`;
+
+  const store  = data.store_name ? escHtml(data.store_name) : '—';
+  const period = (data.week_start && data.week_end)
+    ? escHtml(data.week_start.slice(5).replace('-', '/') + ' 〜 ' + data.week_end.slice(5).replace('-', '/'))
+    : '—';
+  const reason = data.reason ? escHtml(data.reason) : '';
+  const isErr  = s === 'err';
+
+  const tr = document.createElement('tr');
+  tr.innerHTML = `
+    <td>${badge}</td>
+    <td class="td-path" title="${escAttr(relPath)}">${pathHtml}</td>
+    <td class="td-store">${store}</td>
+    <td class="td-period">${period}</td>
+    <td class="td-reason${isErr ? ' err' : ''}">${reason}</td>`;
+  tbody.appendChild(tr);
+  tr.scrollIntoView({ block: 'nearest' });
+}
+
+function appendErrorRow(msg) {
+  const tr = document.createElement('tr');
+  tr.innerHTML = `<td colspan="5" style="color:var(--danger);font-size:13px;padding:10px 12px;">${escHtml(msg)}</td>`;
+  document.getElementById('resultBody').appendChild(tr);
+}
+
+function showSummary(counts) {
+  const row = document.getElementById('summaryRow');
+  row.style.display = 'flex';
+  row.innerHTML = [
+    counts.ok   ? `<div class="sum-item"><span class="sum-label">取込</span><span class="sum-val green">${counts.ok}</span></div>` : '',
+    counts.dup  ? `<div class="sum-item"><span class="sum-label">登録済スキップ</span><span class="sum-val blue">${counts.dup}</span></div>` : '',
+    counts.skip ? `<div class="sum-item"><span class="sum-label">対象外スキップ</span><span class="sum-val gray">${counts.skip}</span></div>` : '',
+    counts.err  ? `<div class="sum-item"><span class="sum-label">エラー</span><span class="sum-val red">${counts.err}</span></div>` : '',
+  ].join('');
+}
+
+function showDoneBanner() {
+  const el = document.getElementById('doneBanner');
+  el.style.display = '';
+  el.innerHTML = `<div class="done-banner">
+    ✅ 処理が完了しました
+    <a href="/viewer/">閲覧画面へ →</a>
+  </div>`;
+}
+
+function escHtml(s) {
+  return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+function escAttr(s) {
+  return String(s ?? '').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+</script>
+</body>
+</html>

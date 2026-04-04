@@ -11,7 +11,7 @@
 |------|---------|
 | バックエンド | Python 3.11+, FastAPI 0.115 |
 | DB | **Supabase (PostgreSQL)** — Supabase Python SDK 2.28 経由の REST/HTTPS アクセス |
-| Excel パース | openpyxl 3.1（pandas は未使用） |
+| Excel パース | openpyxl 3.1（.xlsx）+ xlrd 2.0.1（.xls） |
 | フロントエンド | Vanilla JS + Chart.js 4.4（静的HTML、FastAPI で配信） |
 | 環境変数 | python-dotenv (.env) |
 
@@ -38,16 +38,19 @@ weekly-report-kb/
 │   │   ├── daily_sales.py
 │   │   └── report_text.py
 │   ├── parser/
-│   │   └── excel_parser.py    # openpyxl による Excel パース
+│   │   └── excel_parser.py    # openpyxl / xlrd による Excel パース
 │   └── routers/
 │       ├── upload.py          # POST /upload, GET /reports
 │       ├── reports.py         # GET /reports/{id}/daily-sales, /texts
 │       └── search.py          # GET /search?q=&month=
 ├── frontend/
-│   └── viewer/
-│       └── index.html         # 閲覧 UI（週タブ・KPI・テキスト3セクション）
-├── data/                      # アップロード済み Excel ファイル置き場（約30件）
+│   ├── viewer/
+│   │   └── index.html         # 閲覧 UI（週タブ・KPI・テキスト3セクション）
+│   └── upload/
+│       └── index.html         # アップロード UI（ファイル/フォルダ選択・結果一覧）
+├── data/                      # アップロード済み Excel ファイル置き場
 ├── schema.sql                 # Supabase 上のテーブル定義（参照用）
+├── reprocess_all.py           # data/ 全ファイル再パース・DB 上書きスクリプト
 └── requirements.txt
 ```
 
@@ -84,6 +87,8 @@ weekly_reports (
   week_end        date not null,
   source_filename text,
   submitter_role  text not null default '店長',  -- '店長' or '副店長'
+  report_year     integer,   -- ファイル名から抽出した年（例: 2026）
+  report_month    integer,   -- ファイル名から抽出した月（例: 3）
   unique (store_id, week_start, week_end, submitter_role)
 )
 
@@ -103,9 +108,14 @@ report_texts (
   weekly_report_id  bigint references weekly_reports(id) on delete cascade,
   sheet_index       integer,      -- 1〜6（週報①〜⑥）
   sheet_name        text,
-  content           text          -- ＜営業報告＞以降の本文（全セクション含む）
+  content           text,         -- ＜営業報告＞以降の本文（全セクション含む）
+  has_highlight     boolean not null default false  -- 未使用・残存カラム
 )
 ```
+
+> **月分類の方針**: `week_end` は月またぎ誤検出が起きる場合があるため、月の分類には  
+> `report_year` / `report_month`（ファイル名から抽出）を使用する。  
+> 例: `065 販売部週報 26-03.xlsx` → `report_year=2026, report_month=3`
 
 ---
 
@@ -136,31 +146,42 @@ report_texts (
 - 例: `041 販売部週報 26-03.xlsx`
 - 先頭の数字（3〜4桁）→ ゼロ埋め4桁で `m_store.store_code` を検索
 - `000 販売部週報...` → `store_code='0000'` → フォーマットファイルとして `SkipFileError`
+- `~$` で始まるファイル → Excel 一時ファイルとして `SkipFileError`
 - `052副店長...` / `069販売部週報26-03副.xlsx` → 副店長ファイル（`_is_fuku_tencho` 判定）
 - `売上進捗表` シートが存在しないファイル → `SkipFileError`
+- 年月抽出: ファイル名末尾の `YY-MM` パターン（全角ダッシュ・長音記号も対応）→ `report_year` / `report_month`
+
+### .xls ファイル対応
+- `.xls` は `xlrd.open_workbook()` で読み込み、`_XlrdWorkbookWrapper` で openpyxl ライクなインターフェースに変換
+- `.xls` では黒背景セル検出（`_cell_has_dark_fill`）は常に False（書式情報なし）
+- `.xlsx` は従来通り openpyxl を使用
 
 ---
 
-## 実装済み機能（Phase 1 + Phase 2 進行中）
+## 実装済み機能
 
 ### バックエンド API
 | メソッド | パス | 説明 |
 |---------|------|------|
 | POST | `/upload` | Excel アップロード → パース → DB 保存 |
-| GET  | `/reports?area_id=` | 週報一覧（store_name / submitter_role / area_id 付き） |
+| POST | `/upload/batch` | 複数ファイル一括処理（NDJSON ストリーム返却） |
+| GET  | `/reports?area_id=` | 週報一覧（store_code 昇順、report_year/month 付き） |
 | GET  | `/reports/{id}/daily-sales` | 日別売上・客数・天候・予算比・昨対客数 |
 | GET  | `/reports/{id}/texts` | 週報テキスト一覧（sheet_index 昇順） |
 | GET  | `/search?q=&month=` | 週報テキスト全文検索（最大50件） |
 | GET  | `/health` | ヘルスチェック |
-| GET  | `/viewer/` | フロントエンド静的ファイル配信 |
+| GET  | `/viewer/` | 閲覧 UI 配信 |
+| GET  | `/upload/` | アップロード UI 配信 |
 
 ### パーサー（excel_parser.py）
-- `SkipFileError` 例外: store_code='0000' / 売上進捗表シートなし
+- `SkipFileError` 例外: store_code='0000' / 売上進捗表シートなし / `~$` 一時ファイル
 - `_is_fuku_tencho`: 副店長ファイル判定（「副店長」含む or ファイル名末尾「副」）
 - 副店長ファイル: `store_name` 末尾に「副」付加、`submitter_role='副店長'`
 - 店舗名重複防止: 候補に「店」が付いていれば追加しない
 - `SIGNATURE_WORDS`: 署名セル（社長・部長・エリア長等）を除去
 - 週ブロック追加抽出: `sales_budget_ratio`（row+5）・`customer_count_prev_year`（row+7）
+- `_extract_report_ym_from_filename()`: ファイル名から `report_year`/`report_month` を抽出
+- `_XlrdWorkbookWrapper` / `_XlrdSheetWrapper` / `_XlrdCellWrapper`: xlrd→openpyxl 変換ラッパー
 
 ### パフォーマンス最適化（crud.py）
 - `store_id` のプロセス内キャッシュ（`_store_cache` dict）
@@ -175,11 +196,11 @@ report_texts (
   - 結果クリックで対象週報に遷移、ESC / 背景クリックで閉じる
   - 月フィルター選択中は検索も同月で絞り込み
 - **サイドバー**:
-  - 年月セレクター（最新月デフォルト）
+  - 年月セレクター（`report_year`/`report_month` ベース、最新月デフォルト）
   - エリアセレクター（全エリア / 第1〜3エリア）
   - 店舗名テキスト検索
   - `×` フィルタークリアボタン
-  - 店舗グループ表示（`[店長]` `[副]` バッジ、同一 store_name をグループ化）
+  - 店舗グループ表示（`[店長]` `[副]` バッジ、同一 store_name をグループ化、store_code 昇順）
 - **メインエリア**:
   - サマリーバー（月間売上・客数・日商平均）
   - 日別売上グラフ（Chart.js bar+line、4系列: 売上・客数・売上予算比・客数昨対比）
@@ -190,8 +211,20 @@ report_texts (
     - 人員管理報告
     - 来期コメント（署名除去済み）
 
+### フロントエンド（frontend/upload/index.html）
+- **ファイル選択**: 「ファイルを選択」ボタン（複数選択可）と「フォルダを選択」ボタン（`webkitdirectory`、サブフォルダ再帰）
+- **.xlsx / .xls** のみ自動フィルタリング、その他拡張子は除外
+- ドラッグ&ドロップ対応
+- `/upload/batch` に送信し、NDJSON ストリームをリアルタイム表示
+- 結果テーブル: フォルダパス（グレー）＋ファイル名 / 店舗名 / 期間 / ステータスバッジ（OK・SKIP・登録済・ERR）
+- 完了後サマリー + 「閲覧画面へ →」リンク
+
 ### バッチツール
-- `reprocess_all.py`: `data/` 内全ファイルを再パース・DB 上書き（SkipFileError は SKIP 表示）
+- `reprocess_all.py`: `data/` 内全ファイルを再パース・DB 上書き
+  - `~$` 一時ファイルを glob 段階で除外
+  - `.xlsx` / `.xls` 両対応
+  - stdout を UTF-8 強制（Windows cp932 文字化け対策）
+  - `--force` オプションで登録済みも含めて全件再処理
 
 ---
 
@@ -201,6 +234,7 @@ report_texts (
 cd C:\Users\landrome\weekly-report-kb
 uvicorn backend.main:app --reload
 # → http://127.0.0.1:8000/viewer/
+# → http://127.0.0.1:8000/upload/
 ```
 
 `.env` に以下が必要:
@@ -226,12 +260,18 @@ SUPABASE_KEY=<anon key>
 - サイドバー: 店長/副店長グループ表示
 - 黒背景コメントの強調表示（`★` プレフィックス行を赤枠・太字、`★` 文字は非表示）
 - 週報テキスト全文検索（`GET /search?q=&month=` + モーダル結果表示、キーワードハイライト）
+- .xls ファイル対応（xlrd 2.0.1 + openpyxl ラッパー）
+- `~$` Excel 一時ファイルの自動スキップ
+- アップロード UI 改善（フォルダ選択・サブフォルダパス表示・NDJSON ストリーム結果表示）
+- サイドバー店舗一覧を store_code 昇順でソート（GET /reports でソート）
+- `report_year` / `report_month` カラム追加（ファイル名から年月を抽出・月分類に使用）
+- 月セレクターと月フィルターを `report_year`/`report_month` ベースに変更（week_end 依存を廃止）
+- reprocess_all.py の UTF-8 出力対応・.xls 対応・一時ファイル除外
 
 ### 未着手
 1. **未提出店舗グレーアウト** — m_store 全23店舗を取得し、週報未提出店舗をサイドバーにグレー表示
 2. **月次サマリーダッシュボード** — 全店舗月次集計（売上・客数・日商平均・前月比）
-3. **アップロード UI** — フロントエンドにドラッグ&ドロップ画面追加
-4. **エクスポート** — CSV/Excel 出力エンドポイント
+3. **エクスポート** — CSV/Excel 出力エンドポイント
 
 ---
 
@@ -247,4 +287,6 @@ SUPABASE_KEY=<anon key>
 - 週報テキストは原文をそのまま保持（HTML エスケープはフロントで実施）
 - 静的ファイルパスは `Path(__file__).resolve()` で絶対パス解決（uvicorn 起動ディレクトリ非依存）
 - `report_texts.content` の `★` プレフィックスは黒背景セルのマーカー（DB に格納、フロント表示時は `★` 文字を除去して赤枠スタイルを適用）
-- `report_texts` には使われていない `has_highlight boolean` カラムが Supabase 上に残存（`ALTER TABLE report_texts ADD COLUMN has_highlight boolean NOT NULL DEFAULT false` で追加済み）。コードでは未参照。
+- `report_texts` には未使用の `has_highlight boolean` カラムが Supabase 上に残存。コードでは未参照。
+- `week_end` は月またぎ誤検出で実際の月と異なる場合がある（例: 26-03.xlsx なのに week_end=2026-04-29）。月の分類・フィルタリングには必ず `report_year`/`report_month` を使用すること。
+- Supabase への大量リクエスト時（reprocess --force など）はレート制限（WinError 10035）が発生することがある。失敗したレコードは再実行するか直接 UPDATE で補完する。

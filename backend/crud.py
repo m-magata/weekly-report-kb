@@ -131,6 +131,8 @@ def _upsert_weekly_report(
                 "week_end": str(parsed.week_end),
                 "source_filename": parsed.source_filename,
                 "submitter_role": parsed.submitter_role,
+                "report_year": parsed.report_year,
+                "report_month": parsed.report_month,
             },
             on_conflict="store_id,week_start,week_end,submitter_role",
         )

@@ -7,8 +7,10 @@ data/ フォルダ内の全 Excel を再パースして DB を上書きする。
   python reprocess_all.py --force   # 全件再処理（既存データも上書き）
 """
 import argparse
+import io
 import os
 import sys
+sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -38,7 +40,10 @@ if not args.force:
     res = client.table("weekly_reports").select("source_filename").execute()
     registered = {r["source_filename"] for r in res.data if r["source_filename"]}
 
-files = sorted(data_dir.glob("*.xlsx"))
+files = sorted(
+    f for f in data_dir.glob("*.xls*")
+    if f.suffix.lower() in {".xlsx", ".xls"} and not f.name.startswith("~$")
+)
 mode_label = "全件再処理" if args.force else "新規のみ"
 print(f"{len(files)} 件のファイルを確認します。（モード: {mode_label}）\n")
 

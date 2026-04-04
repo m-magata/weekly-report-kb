@@ -47,6 +47,17 @@
   }
   .app-header .logo { font-size: 15px; font-weight: 700; color: var(--accent); }
   .app-header .sub  { font-size: 12px; color: var(--text-muted); }
+  .header-nav { margin-left: auto; display: flex; gap: 8px; }
+  .nav-link {
+    font-size: 12px; font-weight: 600; padding: 5px 14px;
+    border-radius: 6px; border: 1px solid var(--border);
+    background: var(--surface); color: var(--text-secondary);
+    text-decoration: none; transition: background .12s, color .12s;
+  }
+  .nav-link:hover { background: var(--bg); color: var(--text-primary); }
+  .nav-link.active {
+    background: var(--accent); color: #fff; border-color: var(--accent);
+  }
 
   /* ---- レイアウト ---- */
   .layout { display: flex; flex: 1; min-height: 0; overflow: hidden; }
@@ -429,10 +440,14 @@
 <header class="app-header">
   <span class="logo">📊 週報ナレッジDB</span>
   <span class="sub">販売部週報 閲覧システム</span>
-  <div class="header-search">
+  <div class="header-search" style="margin-left:auto;">
     <input type="text" id="globalSearch" class="header-search-input" placeholder="テキスト全文検索...">
     <button id="globalSearchBtn" class="header-search-btn">検索</button>
   </div>
+  <nav class="header-nav" style="margin-left:8px;">
+    <a href="/upload/" class="nav-link">アップロード</a>
+    <a href="/viewer/" class="nav-link active">閲覧画面</a>
+  </nav>
 </header>
 
 <!-- 検索結果モーダル -->
@@ -611,10 +626,10 @@ async function loadReports() {
 }
 
 function populateMonthSelector() {
-  const months = [...new Set(allReports.map(r => {
-    const d = parseDate(r.week_end);
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-  }))].sort().reverse();
+  const months = [...new Set(allReports
+    .filter(r => r.report_year && r.report_month)
+    .map(r => `${r.report_year}-${String(r.report_month).padStart(2, '0')}`)
+  )].sort().reverse();
 
   const sel = document.getElementById('monthFilter');
   sel.innerHTML = '<option value="">すべての月</option>' +
@@ -634,10 +649,8 @@ function applyFilter() {
   let list = allReports;
 
   if (filterMonth) {
-    list = list.filter(r => {
-      const d = parseDate(r.week_end);
-      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}` === filterMonth;
-    });
+    const [fy, fm] = filterMonth.split('-').map(Number);
+    list = list.filter(r => r.report_year === fy && r.report_month === fm);
   }
 
   if (filterArea) {
