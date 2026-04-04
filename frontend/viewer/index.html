@@ -422,6 +422,59 @@
     gap: 8px; padding: 40px; font-size: 13px; color: var(--text-muted);
   }
 
+  /* ---- 昨年同月注意事項パネル ---- */
+  .hl-panel {
+    position: fixed;
+    top: 52px; left: var(--sidebar-w); right: 0; bottom: 0;
+    z-index: 200;
+    background: var(--bg);
+    overflow-y: auto;
+    display: none;
+    padding: 16px 20px 32px;
+  }
+  .hl-panel.visible { display: block; }
+  .hl-panel-header {
+    display: flex; align-items: center; gap: 10px;
+    margin-bottom: 14px; flex-shrink: 0;
+  }
+  .hl-panel-title { font-size: 15px; font-weight: 700; flex: 1; }
+  .hl-close-btn {
+    width: 30px; height: 30px; border: 1px solid var(--border);
+    background: var(--surface); border-radius: 6px; font-size: 18px;
+    color: var(--text-muted); cursor: pointer; line-height: 1;
+  }
+  .hl-close-btn:hover { background: var(--bg); color: var(--text-primary); }
+  .hl-item {
+    background: var(--surface); border-radius: var(--radius);
+    box-shadow: var(--shadow); margin-bottom: 12px; overflow: hidden;
+  }
+  .hl-item-header {
+    display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+    padding: 10px 16px; border-bottom: 1px solid var(--border);
+    background: #fafafa;
+  }
+  .hl-store { font-size: 13px; font-weight: 700; }
+  .hl-month { font-size: 12px; color: var(--text-muted); }
+  .hl-sheet {
+    font-size: 10px; font-weight: 600; padding: 2px 8px;
+    border-radius: 99px; background: var(--bg); color: var(--text-secondary);
+  }
+  .hl-content { padding: 12px 16px; font-size: 14px; line-height: 1.8; }
+  .hl-empty {
+    text-align: center; padding: 60px 20px;
+    font-size: 14px; color: var(--text-muted);
+  }
+  .hl-btn {
+    width: 100%; margin-top: 4px;
+    padding: 7px 12px; border-radius: 6px;
+    border: 1px solid #fca5a5; background: #fef2f2;
+    color: #991b1b; font-size: 12px; font-weight: 600;
+    cursor: pointer; text-align: left;
+    transition: background .12s;
+  }
+  .hl-btn:hover { background: #fee2e2; }
+  .hl-btn:disabled { opacity: .4; cursor: not-allowed; }
+
   ::-webkit-scrollbar { width: 6px; }
   ::-webkit-scrollbar-track { background: transparent; }
   ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
@@ -460,6 +513,15 @@
   </div>
 </div>
 
+<!-- 昨年同月注意事項オーバーレイパネル -->
+<div id="hlPanel" class="hl-panel">
+  <div class="hl-panel-header">
+    <span class="hl-panel-title" id="hlPanelTitle">昨年同月の注意事項</span>
+    <button class="hl-close-btn" id="hlCloseBtn" title="閉じる">×</button>
+  </div>
+  <div id="hlPanelBody"></div>
+</div>
+
 <div class="layout">
   <aside class="sidebar">
     <div class="sidebar-title">週報一覧</div>
@@ -475,6 +537,9 @@
         <option value="3">第3エリア</option>
       </select>
       <input type="text" id="storeSearch" class="search-input" placeholder="🔍 店舗名を検索">
+      <button class="hl-btn" id="hlBtn" style="display:none;" disabled>
+        📋 昨年同月の注意事項を確認
+      </button>
     </div>
     <div class="report-list" id="reportList">
       <div class="loading"><div class="spinner"></div>読み込み中...</div>
@@ -1107,10 +1172,92 @@ function renderSearchResults(results, q) {
   });
 }
 
+/* ===== 昨年同月注意事項 ===== */
+function updateHlBtn() {
+  const btn = document.getElementById('hlBtn');
+  if (filterMonth) {
+    btn.style.display = '';
+    btn.disabled = false;
+    const [y, m] = filterMonth.split('-').map(Number);
+    btn.textContent = `📋 ${y - 1}年${m}月前後の注意事項`;
+  } else {
+    btn.style.display = 'none';
+    btn.disabled = true;
+  }
+}
+
+async function showHighlights() {
+  if (!filterMonth) return;
+
+  const [y, m] = filterMonth.split('-').map(Number);
+  const prevY  = y - 1;
+  const mFrom  = Math.max(1, m - 1);
+  const mTo    = Math.min(12, m + 1);
+
+  const panel = document.getElementById('hlPanel');
+  const body  = document.getElementById('hlPanelBody');
+  document.getElementById('hlPanelTitle').textContent =
+    `昨年同月の注意事項 — ${prevY}年${mFrom}〜${mTo}月`;
+
+  panel.classList.add('visible');
+  body.innerHTML = `<div class="hl-empty">
+    <div class="spinner" style="margin:0 auto 8px;"></div>
+    AI がまとめ中...
+  </div>`;
+
+  try {
+    const res = await fetch(`${API}/api/highlights/summary`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ year: prevY, month_from: mFrom, month_to: mTo }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: res.statusText }));
+      throw new Error(err.detail || res.statusText);
+    }
+    const data = await res.json();
+    renderAiSummary(data.summary);
+  } catch (e) {
+    body.innerHTML = `<div class="hl-empty">エラー: ${escHtml(e.message)}</div>`;
+  }
+}
+
+function renderAiSummary(summary) {
+  const body = document.getElementById('hlPanelBody');
+  if (!summary) {
+    body.innerHTML = '<div class="hl-empty">要約結果がありませんでした。</div>';
+    return;
+  }
+  // Markdown 風の見出し（## / **）を簡易レンダリング
+  const html = summary.split('\n').map(line => {
+    if (!line.trim()) return '<div class="blank-line"></div>';
+    const escaped = escHtml(line);
+    // ## 見出し
+    if (/^##\s/.test(line)) {
+      return `<div style="font-size:14px;font-weight:700;margin:14px 0 4px;color:var(--text-primary);">${escHtml(line.replace(/^##\s*/, ''))}</div>`;
+    }
+    // **太字** をインライン変換
+    const inlined = escaped.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+    return `<div class="text-line">${inlined}</div>`;
+  }).join('');
+
+  body.innerHTML = `<div class="hl-item">
+    <div class="hl-item-header">
+      <span class="hl-store">🤖 AI サマリー</span>
+    </div>
+    <div class="hl-content" style="max-height:none;">${html}</div>
+  </div>`;
+}
+
+function closeHighlights() {
+  document.getElementById('hlPanel').classList.remove('visible');
+}
+
 /* ===== 初期化 ===== */
 document.getElementById('monthFilter').addEventListener('change', e => {
   filterMonth = e.target.value;
   applyFilter();
+  updateHlBtn();
 });
 document.getElementById('areaFilter').addEventListener('change', e => {
   filterArea = e.target.value;
@@ -1128,8 +1275,11 @@ document.getElementById('clearFilter').addEventListener('click', () => {
   document.getElementById('areaFilter').value  = '';
   document.getElementById('storeSearch').value = '';
   applyFilter();
+  updateHlBtn();
+  closeHighlights();
 });
-
+document.getElementById('hlBtn').addEventListener('click', showHighlights);
+document.getElementById('hlCloseBtn').addEventListener('click', closeHighlights);
 document.getElementById('globalSearchBtn').addEventListener('click', executeSearch);
 document.getElementById('globalSearch').addEventListener('keydown', e => {
   if (e.key === 'Enter') executeSearch();
@@ -1138,7 +1288,7 @@ document.getElementById('globalSearch').addEventListener('keydown', e => {
 document.getElementById('closeSearchModal').addEventListener('click', closeSearchModal);
 document.getElementById('searchModalBackdrop').addEventListener('click', closeSearchModal);
 document.addEventListener('keydown', e => {
-  if (e.key === 'Escape') closeSearchModal();
+  if (e.key === 'Escape') { closeSearchModal(); closeHighlights(); }
 });
 
 loadReports();

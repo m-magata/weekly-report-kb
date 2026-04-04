@@ -6,12 +6,14 @@ from backend.routers.upload import router as upload_router
 from backend.routers.reports import router as reports_router
 from backend.routers.search import router as search_router
 from backend.routers.stores import router as stores_router
+from backend.routers.highlights import router as highlights_router
 
 app = FastAPI(title="週報ナレッジDB", version="0.1.0")
 app.include_router(upload_router)
 app.include_router(reports_router)
 app.include_router(search_router)
 app.include_router(stores_router)
+app.include_router(highlights_router)
 
 # フロントエンド静的ファイル配信
 # __file__ から絶対パスを解決（起動ディレクトリに依存しない）
