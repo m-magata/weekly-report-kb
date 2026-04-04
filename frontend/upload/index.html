@@ -232,6 +232,10 @@
       <div class="file-list" id="fileList"></div>
       <div class="action-row">
         <button class="upload-btn" id="uploadBtn" disabled>▲ アップロード開始</button>
+        <label style="display:flex;align-items:center;gap:5px;font-size:13px;cursor:pointer;user-select:none;">
+          <input type="checkbox" id="forceCheck">
+          強制上書き
+        </label>
         <span class="action-hint" id="actionHint">ファイルを選択してください</span>
       </div>
     </div>
@@ -376,7 +380,9 @@ async function startUpload() {
   const counts = { ok: 0, skip: 0, dup: 0, err: 0 };
 
   try {
-    const res = await fetch(`${API}/upload/batch`, { method: 'POST', body: formData });
+    const force = document.getElementById('forceCheck').checked;
+    const url   = `${API}/upload/batch${force ? '?force=true' : ''}`;
+    const res = await fetch(url, { method: 'POST', body: formData });
     if (!res.ok) {
       const err = await res.json().catch(() => ({ detail: res.statusText }));
       throw new Error(err.detail || res.statusText);

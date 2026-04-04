@@ -16,7 +16,9 @@
       "Bash(grep LISTEN uvicorn backend.main:app --port 9100)",
       "Bash(pkill -f \"uvicorn.*9100\")",
       "Bash(del:*)",
-      "Bash(echo \"exit: $?\")"
+      "Bash(echo \"exit: $?\")",
+      "Bash(git add:*)",
+      "Bash(git commit:*)"
     ]
   }
 }

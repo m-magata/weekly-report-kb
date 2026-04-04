@@ -86,15 +86,19 @@ async def upload_report(
 @router.post("/upload/batch")
 async def upload_batch(
     files: list[UploadFile] = File(...),
+    force: bool = False,
     client: Client = Depends(get_client),
 ):
     """
     複数ファイルを一括アップロード・DB 取込し、NDJSON ストリームで結果を返す。
-    登録済みファイル（source_filename 一致）はスキップ。
+    登録済みファイル（source_filename 一致）はスキップ（force=True の場合は上書き）。
     """
-    # 登録済みファイル名セット（DUP チェック用）
-    dup_res    = client.table("weekly_reports").select("source_filename").execute()
-    registered = {r["source_filename"] for r in dup_res.data if r["source_filename"]}
+    # 登録済みファイル名セット（DUP チェック用、force=True の場合は空セット）
+    if force:
+        registered: set[str] = set()
+    else:
+        dup_res    = client.table("weekly_reports").select("source_filename").execute()
+        registered = {r["source_filename"] for r in dup_res.data if r["source_filename"]}
 
     # 全ファイルをまず data/ に保存してからストリーム処理
     saved: list[dict] = []
