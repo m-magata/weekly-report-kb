@@ -26,3 +26,10 @@ create table if not exists report_texts (
     sheet_name        text,
     content           text
 );
+
+create table if not exists digest_cache (
+    id          bigserial primary key,
+    cache_key   text not null unique,   -- "{year}-{month_from}-{month_to}"
+    digest_text text not null,
+    created_at  timestamptz not null default now()
+);

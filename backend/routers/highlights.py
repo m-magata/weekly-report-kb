@@ -29,6 +29,7 @@ class SummaryRequest(BaseModel):
     year: int
     month_from: int
     month_to: int
+    force: bool = False  # True の場合キャッシュを無視して再生成
 
 
 class SummaryResponse(BaseModel):
@@ -137,18 +138,46 @@ def _call_anthropic(source_text: str, prompt_prefix: str) -> str:
     return message.content[0].text if message.content else ""
 
 
+_SUMMARY_PROMPT = (
+    "以下は昨年同時期の全店舗の重要コメントです。\n"
+    "今年の同時期に注意すべきポイントをタイトルと内容でまとめてください。\n"
+    "各ポイントに出典店舗名・月を付けてください。"
+)
+
+
+def _cache_key(year: int, month_from: int, month_to: int) -> str:
+    return f"{year}-{month_from}-{month_to}"
+
+
+def _get_cache(client: Client, key: str) -> str | None:
+    res = client.table("digest_cache").select("digest_text").eq("cache_key", key).limit(1).execute()
+    return res.data[0]["digest_text"] if res.data else None
+
+
+def _set_cache(client: Client, key: str, text: str) -> None:
+    client.table("digest_cache").upsert(
+        {"cache_key": key, "digest_text": text},
+        on_conflict="cache_key",
+    ).execute()
+
+
 @router.post("/summary", response_model=SummaryResponse)
 def summarize_highlights(req: SummaryRequest, client: Client = Depends(get_client)):
+    key = _cache_key(req.year, req.month_from, req.month_to)
+
+    if not req.force:
+        cached = _get_cache(client, key)
+        if cached:
+            return SummaryResponse(summary=cached)
+
     items = _fetch_highlights(client, req.year, req.month_from, req.month_to)
     source_text = _build_source_text(items)
     if not source_text:
         return SummaryResponse(summary="注意事項（★行）が記載されたデータはありませんでした。")
-    prompt_prefix = (
-        "以下は昨年同時期の全店舗の重要コメントです。\n"
-        "今年の同時期に注意すべきポイントをタイトルと内容でまとめてください。\n"
-        "各ポイントに出典店舗名・月を付けてください。"
-    )
-    return SummaryResponse(summary=_call_anthropic(source_text, prompt_prefix))
+
+    summary = _call_anthropic(source_text, _SUMMARY_PROMPT)
+    _set_cache(client, key, summary)
+    return SummaryResponse(summary=summary)
 
 
 @router.post("/digest", response_model=DigestResponse)

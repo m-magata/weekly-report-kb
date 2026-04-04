@@ -1186,13 +1186,17 @@ function updateHlBtn() {
   }
 }
 
-async function showHighlights() {
+// 現在パネルに表示中の year/month パラメータ（再生成時に使用）
+let _hlParams = null;
+
+async function fetchDigest(force = false) {
   if (!filterMonth) return;
 
   const [y, m] = filterMonth.split('-').map(Number);
   const prevY  = y - 1;
   const mFrom  = Math.max(1, m - 1);
   const mTo    = Math.min(12, m + 1);
+  _hlParams = { year: prevY, month_from: mFrom, month_to: mTo };
 
   const panel = document.getElementById('hlPanel');
   const body  = document.getElementById('hlPanelBody');
@@ -1202,14 +1206,14 @@ async function showHighlights() {
   panel.classList.add('visible');
   body.innerHTML = `<div class="hl-empty">
     <div class="spinner" style="margin:0 auto 8px;"></div>
-    AI がまとめ中...
+    ${force ? '再生成中...' : 'AI がまとめ中...'}
   </div>`;
 
   try {
     const res = await fetch(`${API}/api/highlights/summary`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ year: prevY, month_from: mFrom, month_to: mTo }),
+      body: JSON.stringify({ ..._hlParams, force }),
     });
     if (!res.ok) {
       const err = await res.json().catch(() => ({ detail: res.statusText }));
@@ -1228,25 +1232,51 @@ function renderAiSummary(summary) {
     body.innerHTML = '<div class="hl-empty">要約結果がありませんでした。</div>';
     return;
   }
+
   // Markdown 風の見出し（## / **）を簡易レンダリング
   const html = summary.split('\n').map(line => {
     if (!line.trim()) return '<div class="blank-line"></div>';
-    const escaped = escHtml(line);
-    // ## 見出し
     if (/^##\s/.test(line)) {
       return `<div style="font-size:14px;font-weight:700;margin:14px 0 4px;color:var(--text-primary);">${escHtml(line.replace(/^##\s*/, ''))}</div>`;
     }
-    // **太字** をインライン変換
-    const inlined = escaped.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+    const inlined = escHtml(line).replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
     return `<div class="text-line">${inlined}</div>`;
   }).join('');
 
+  // コピー・再生成ボタン
+  const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+  const regenBtn = isLocal
+    ? `<button id="hlRegenBtn" style="
+        padding:5px 14px; border-radius:6px; border:1px solid var(--border);
+        background:var(--surface); color:var(--text-secondary); font-size:12px;
+        font-weight:600; cursor:pointer;">🔄 再生成</button>`
+    : '';
+
   body.innerHTML = `<div class="hl-item">
-    <div class="hl-item-header">
+    <div class="hl-item-header" style="justify-content:space-between;">
       <span class="hl-store">🤖 AI サマリー</span>
+      <div style="display:flex;gap:8px;">
+        <button id="hlCopyBtn" style="
+          padding:5px 14px; border-radius:6px; border:1px solid var(--border);
+          background:var(--surface); color:var(--text-secondary); font-size:12px;
+          font-weight:600; cursor:pointer;">📋 コピー</button>
+        ${regenBtn}
+      </div>
     </div>
-    <div class="hl-content" style="max-height:none;">${html}</div>
+    <div class="hl-content" style="max-height:none;" id="hlSummaryText">${html}</div>
   </div>`;
+
+  document.getElementById('hlCopyBtn').addEventListener('click', () => {
+    navigator.clipboard.writeText(summary).then(() => {
+      const btn = document.getElementById('hlCopyBtn');
+      btn.textContent = '✅ コピー完了';
+      setTimeout(() => { btn.textContent = '📋 コピー'; }, 2000);
+    });
+  });
+
+  if (isLocal) {
+    document.getElementById('hlRegenBtn').addEventListener('click', () => fetchDigest(true));
+  }
 }
 
 function closeHighlights() {
@@ -1278,7 +1308,7 @@ document.getElementById('clearFilter').addEventListener('click', () => {
   updateHlBtn();
   closeHighlights();
 });
-document.getElementById('hlBtn').addEventListener('click', showHighlights);
+document.getElementById('hlBtn').addEventListener('click', () => fetchDigest(false));
 document.getElementById('hlCloseBtn').addEventListener('click', closeHighlights);
 document.getElementById('globalSearchBtn').addEventListener('click', executeSearch);
 document.getElementById('globalSearch').addEventListener('keydown', e => {
