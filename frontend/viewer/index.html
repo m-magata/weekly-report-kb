@@ -599,16 +599,33 @@ function escHtml(s) {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
-/* テキストを行ごとのHTML要素に変換（★行は赤背景・太字、★文字は非表示） */
+/* テキストを行ごとのHTML要素に変換（★行は連続をまとめて赤枠段落、★文字は非表示） */
 function renderBodyHtml(text) {
   if (!text) return '';
-  return text.split('\n').map(line => {
-    if (!line.trim()) return '<div class="blank-line"></div>';
+  const lines = text.split('\n');
+  const parts = [];
+  let hlBuf = [];
+
+  function flushHl() {
+    if (hlBuf.length === 0) return;
+    parts.push(`<div class="hl-line">${escHtml(hlBuf.join(' '))}</div>`);
+    hlBuf = [];
+  }
+
+  for (const line of lines) {
     if (line.startsWith('★')) {
-      return `<div class="hl-line">${escHtml(line.slice(1))}</div>`;
+      hlBuf.push(line.slice(1).trim());
+    } else {
+      flushHl();
+      if (!line.trim()) {
+        parts.push('<div class="blank-line"></div>');
+      } else {
+        parts.push(`<div class="text-line">${escHtml(line)}</div>`);
+      }
     }
-    return `<div class="text-line">${escHtml(line)}</div>`;
-  }).join('');
+  }
+  flushHl();
+  return parts.join('');
 }
 
 /* ===== 一覧読み込み ===== */

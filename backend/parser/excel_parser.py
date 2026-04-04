@@ -40,21 +40,47 @@ import xlrd as _xlrd
 # xlrd ラッパー（.xls ファイル用 / openpyxl ライクなインターフェース）
 # ---------------------------------------------------------------------------
 
-class _XlrdCellWrapper:
-    """xlrd セルをopenpyxlライクにラップ（書式情報なし）。"""
-    __slots__ = ("value", "fill")
+class _XlrdFill:
+    """_cell_has_dark_fill が解釈できる openpyxl 互換の fill ダミー。"""
+    class _Color:
+        def __init__(self, r: int, g: int, b: int):
+            self.type = "rgb"
+            self.rgb  = f"FF{r:02X}{g:02X}{b:02X}"
 
-    def __init__(self, raw_value):
-        # xlrd の空セル（''）を None に統一
-        self.value = None if raw_value == "" else raw_value
-        self.fill = None  # xls は書式未取得のため黒背景判定は常に False
+    def __init__(self, r: int, g: int, b: int):
+        self.fill_type = "solid"
+        self.fgColor   = self._Color(r, g, b)
+
+
+class _XlrdCellWrapper:
+    """xlrd セルをopenpyxlライクにラップ。book と xf_index を保持し fill プロパティで背景色を返す。"""
+    __slots__ = ("value", "_book", "_xf_index")
+
+    def __init__(self, raw_value, book, xf_index: int | None):
+        self.value     = None if raw_value == "" else raw_value
+        self._book     = book
+        self._xf_index = xf_index
+
+    @property
+    def fill(self):
+        if self._book is None or self._xf_index is None:
+            return None
+        try:
+            xf  = self._book.xf_list[self._xf_index]
+            rgb = self._book.colour_map.get(xf.background.pattern_colour_index)
+            if rgb is None:
+                return None
+            return _XlrdFill(*rgb)
+        except Exception:
+            return None
 
 
 class _XlrdSheetWrapper:
     """xlrd シートをopenpyxlライクにラップ。"""
 
-    def __init__(self, xlrd_sheet):
+    def __init__(self, xlrd_sheet, xlrd_book=None):
         self._sheet = xlrd_sheet
+        self._book  = xlrd_book  # formatting_info=True で開いた場合のみ有効
 
     def iter_rows(self, min_row: int = 1, max_row: int | None = None, values_only: bool = True):
         nrows = self._sheet.nrows
@@ -64,7 +90,14 @@ class _XlrdSheetWrapper:
             if values_only:
                 yield tuple(None if v == "" else v for v in raw)
             else:
-                yield [_XlrdCellWrapper(v) for v in raw]
+                yield [
+                    _XlrdCellWrapper(
+                        raw[c],
+                        self._book,
+                        self._sheet.cell_xf_index(r, c) if self._book is not None else None,
+                    )
+                    for c in range(len(raw))
+                ]
 
 
 class _XlrdWorkbookWrapper:
@@ -81,7 +114,7 @@ class _XlrdWorkbookWrapper:
         return name in self._book.sheet_names()
 
     def __getitem__(self, name: str) -> _XlrdSheetWrapper:
-        return _XlrdSheetWrapper(self._book.sheet_by_name(name))
+        return _XlrdSheetWrapper(self._book.sheet_by_name(name), self._book)
 
 
 # 「週報①」〜「週報⑥」に対応
@@ -157,7 +190,7 @@ def parse_excel(filepath: str | Path) -> ParsedReport:
 
     suffix = path.suffix.lower()
     if suffix == ".xls":
-        wb = _XlrdWorkbookWrapper(_xlrd.open_workbook(str(path)))
+        wb = _XlrdWorkbookWrapper(_xlrd.open_workbook(str(path), formatting_info=True))
     else:
         wb = openpyxl.load_workbook(path, data_only=True)
 
