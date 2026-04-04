@@ -292,13 +292,9 @@
   .search-input:focus { outline: none; border-color: var(--accent); background: var(--surface); }
 
   /* ---- 店舗グループ ---- */
-  .store-group {
-    padding: 10px 16px; border-bottom: 1px solid var(--border);
-  }
-  .store-group-name {
-    font-size: 13px; font-weight: 600; color: var(--text-primary); margin-bottom: 5px;
-  }
-  .role-badges { display: flex; gap: 6px; flex-wrap: wrap; }
+  .store-group { display: flex; align-items: center; gap: 8px; padding: 6px 12px; flex-wrap: wrap; }
+  .store-group-name { font-size: 13px; font-weight: 700; color: var(--text-main); white-space: nowrap; min-width: fit-content; }
+  .role-badges { display: flex; gap: 4px; flex-wrap: wrap; }
   .role-badge {
     font-size: 11px; font-weight: 600; padding: 2px 10px;
     border-radius: 99px; border: 1.5px solid transparent; cursor: pointer;
@@ -683,7 +679,10 @@ function renderList(reports) {
   }
 
   el.innerHTML = [...groupMap.entries()].map(([storeName, arr]) => {
-    const badges = arr.map(r => {
+    const badges = [...new Map(arr.map(r => {
+      const isFuku = r.submitter_role === '副店長';
+      return [isFuku ? 'fuku' : 'tencho', r];
+    })).values()].map(r => {
       const isFuku = r.submitter_role === '副店長';
       const cls    = isFuku ? 'fuku' : 'tencho';
       const label  = isFuku ? '副' : '店長';

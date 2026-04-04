@@ -15,7 +15,8 @@
       "Bash(pkill -f \"uvicorn.*9000\")",
       "Bash(grep LISTEN uvicorn backend.main:app --port 9100)",
       "Bash(pkill -f \"uvicorn.*9100\")",
-      "Bash(del:*)"
+      "Bash(del:*)",
+      "Bash(echo \"exit: $?\")"
     ]
   }
 }
