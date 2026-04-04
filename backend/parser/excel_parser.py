@@ -119,6 +119,7 @@ class ReportTextRecord:
     sheet_index: int  # 1〜6
     sheet_name: str
     content: str
+    is_highlight: bool = False  # ★プレフィックス行を含む場合 True（DB の has_highlight に対応）
 
 
 @dataclass
@@ -323,8 +324,10 @@ def _parse_sales_sheet(
 def _parse_report_sheets(wb: openpyxl.Workbook) -> list[ReportTextRecord]:
     """週報①〜⑦シートから営業報告テキストを抽出する。
 
-    values_only=False でセルオブジェクトを取得し、黒/ダーク系の背景色セルの
-    テキスト先頭に「★」プレフィックスを付与する（フロント側で強調表示に使用）。
+    黒/ダーク系の背景色セルを1つでも含む行を「黒背景行」とし、
+    黒背景行が連続する区間をバッファリングする。
+    非黒背景行に切り替わった時点でバッファを連結して「★」プレフィックス付きの
+    1行として確定する。「★」はDBに格納し、フロント側で強調表示に使用。
     """
     records: list[ReportTextRecord] = []
 
@@ -338,10 +341,12 @@ def _parse_report_sheets(wb: openpyxl.Workbook) -> list[ReportTextRecord]:
 
         text_lines: list[str] = []
         in_report_section = False
+        dark_buffer: list[str] = []  # 黒背景行の連結バッファ
 
         for row in ws.iter_rows(values_only=False):
-            row_texts: list[str] = []
             found_marker = False
+            row_texts: list[str] = []
+            row_is_dark = False
 
             for cell in row:
                 if cell.value is None:
@@ -349,32 +354,44 @@ def _parse_report_sheets(wb: openpyxl.Workbook) -> list[ReportTextRecord]:
                 text = str(cell.value).strip()
                 if not text:
                     continue
-                # 署名欄の単独セル（「社長」「部長」等）を除去
                 if text in SIGNATURE_WORDS:
                     continue
-                # 山括弧付きの「＜営業報告＞」を正確に検出
                 if not in_report_section and "＜" in text and "営業報告" in text:
                     found_marker = True
-                    continue
+                    break  # マーカー行の残セルは不要
                 if in_report_section:
-                    # セル単位で黒背景を判定し、そのセルの行頭にのみ★を付与
+                    row_texts.append(text)
                     if _cell_has_dark_fill(cell):
-                        row_texts.append("★" + text)
-                    else:
-                        row_texts.append(text)
+                        row_is_dark = True  # この行に黒背景セルが1つでもあれば黒背景行
 
             if found_marker:
                 in_report_section = True
 
-            if in_report_section and not found_marker and row_texts:
+            if not in_report_section or found_marker or not row_texts:
+                continue
+
+            if row_is_dark:
+                # 黒背景行: バッファに追加
+                dark_buffer.extend(row_texts)
+            else:
+                # 非黒背景行: バッファが溜まっていれば★1行として確定
+                if dark_buffer:
+                    text_lines.append("★" + " ".join(dark_buffer))
+                    dark_buffer = []
                 text_lines.extend(row_texts)
+
+        # シート末尾でバッファ残りを確定
+        if dark_buffer:
+            text_lines.append("★" + " ".join(dark_buffer))
 
         content = "\n".join(text_lines).strip()
         if content:
+            has_hl = any(line.startswith("★") for line in text_lines)
             records.append(ReportTextRecord(
                 sheet_index=sheet_index,
                 sheet_name=sheet_name,
                 content=content,
+                is_highlight=has_hl,
             ))
 
     records.sort(key=lambda r: r.sheet_index)

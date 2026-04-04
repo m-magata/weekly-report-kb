@@ -25,6 +25,7 @@ class ReportTextItem(BaseModel):
     sheet_index: int
     sheet_name: str
     content: str | None
+    has_highlight: bool = False
 
 
 @router.get("/{report_id}/daily-sales", response_model=list[DailySalesItem])
@@ -48,7 +49,7 @@ def get_daily_sales(report_id: int, client: Client = Depends(get_client)):
 def get_report_texts(report_id: int, client: Client = Depends(get_client)):
     res = (
         client.table("report_texts")
-        .select("sheet_index, sheet_name, content")
+        .select("sheet_index, sheet_name, content, has_highlight")
         .eq("weekly_report_id", report_id)
         .order("sheet_index")
         .execute()

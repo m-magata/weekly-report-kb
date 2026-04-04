@@ -191,7 +191,7 @@ def _write_report_texts(
             "sheet_index": rec.sheet_index,
             "sheet_name": rec.sheet_name,
             "content": rec.content,
-
+            "has_highlight": rec.is_highlight,
         }
         for rec in parsed.report_texts
     ]
