@@ -711,10 +711,19 @@ async function loadReports() {
 }
 
 function populateMonthSelector() {
-  const months = [...new Set(allReports
+  const existingMonths = new Set(allReports
     .filter(r => r.report_year && r.report_month)
     .map(r => `${r.report_year}-${String(r.report_month).padStart(2, '0')}`)
-  )].sort().reverse();
+  );
+
+  // 現在月〜+3ヶ月先を追加
+  const now = new Date();
+  for (let i = 0; i <= 3; i++) {
+    const d = new Date(now.getFullYear(), now.getMonth() + i, 1);
+    existingMonths.add(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`);
+  }
+
+  const months = [...existingMonths].sort().reverse();
 
   const sel = document.getElementById('monthFilter');
   sel.innerHTML = '<option value="">すべての月</option>' +
@@ -1194,8 +1203,8 @@ async function fetchDigest(force = false) {
 
   const [y, m] = filterMonth.split('-').map(Number);
   const prevY  = y - 1;
-  const mFrom  = Math.max(1, m - 1);
-  const mTo    = Math.min(12, m + 1);
+  const mFrom  = m;
+  const mTo    = Math.min(12, m + 2);
   _hlParams = { year: prevY, month_from: mFrom, month_to: mTo };
 
   const panel = document.getElementById('hlPanel');

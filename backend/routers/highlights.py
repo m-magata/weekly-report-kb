@@ -106,9 +106,21 @@ def get_highlights(
 
 
 _DIGEST_PROMPT = (
-    "以下は昨年同時期の全店舗の重要コメントです。"
-    "今年の同時期に注意すべきポイントをタイトルと内容でまとめ、"
-    "各ポイントに出典店舗名・月を付けてください。"
+    "以下は昨年同時期の全店舗の重要コメントです。\n"
+    "今年の同時期に注意すべきポイントを以下のフォーマットで必ず出力してください。\n\n"
+    "出力フォーマット（厳守）：\n"
+    "今年の同時期に注意すべきポイント\n\n"
+    "1. タイトル\n"
+    "原文そのまま引用した内容。\n"
+    "出典：店舗名 年月 シート名\n\n"
+    "2. タイトル\n"
+    "...\n\n"
+    "厳守ルール：\n"
+    "- #・##・###・**・【】・■などの記号は絶対に使わない\n"
+    "- 見出しは数字とピリオドのみ（例：1. 2. 3.）\n"
+    "- 内容は原文をそのまま引用し要約・解釈しない\n"
+    "- 出典は必ず「出典：店舗名 年月 シート名」の形式\n"
+    "- データがない場合は「該当データがありません」とのみ出力"
 )
 
 
@@ -173,7 +185,7 @@ def summarize_highlights(req: SummaryRequest, client: Client = Depends(get_clien
     items = _fetch_highlights(client, req.year, req.month_from, req.month_to)
     source_text = _build_source_text(items)
     if not source_text:
-        return SummaryResponse(summary="注意事項（★行）が記載されたデータはありませんでした。")
+        return SummaryResponse(summary="該当データがありません")
 
     summary = _call_anthropic(source_text, _SUMMARY_PROMPT)
     _set_cache(client, key, summary)
@@ -185,5 +197,5 @@ def digest_highlights(req: SummaryRequest, client: Client = Depends(get_client))
     items = _fetch_highlights(client, req.year, req.month_from, req.month_to)
     source_text = _build_source_text(items)
     if not source_text:
-        return DigestResponse(digest="注意事項（★行）が記載されたデータはありませんでした。")
+        return DigestResponse(digest="該当データがありません")
     return DigestResponse(digest=_call_anthropic(source_text, _DIGEST_PROMPT))

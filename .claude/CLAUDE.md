@@ -290,3 +290,34 @@ SUPABASE_KEY=<anon key>
 - `report_texts` には未使用の `has_highlight boolean` カラムが Supabase 上に残存。コードでは未参照。
 - `week_end` は月またぎ誤検出で実際の月と異なる場合がある（例: 26-03.xlsx なのに week_end=2026-04-29）。月の分類・フィルタリングには必ず `report_year`/`report_month` を使用すること。
 - Supabase への大量リクエスト時（reprocess --force など）はレート制限（WinError 10035）が発生することがある。失敗したレコードは再実行するか直接 UPDATE で補完する。
+
+---
+
+## 2026-04-05 引き継ぎ
+
+### 完了済み機能
+- バッジ重複排除・店舗名同行配置
+- 未提出店舗グレーアウト（/api/stores/all エンドポイント）
+- 黒背景セル強調表示（行単位連結・フロント★処理）
+- xls形式黒背景検出対応（formatting_info=True・_XlrdCellWrapper改修）
+- 強制上書きUI追加（/upload/batch?force=true）
+- /api/highlights エンドポイント（has_highlight=trueの横断取得）
+- AIダイジェスト機能（/api/highlights/summary・キャッシュ・コピー・再生成）
+- digest_cacheテーブル作成済み（Supabase）
+- 年月フィルター現在月+3ヶ月先まで対応
+
+### 現在の問題
+- AIダイジェストのスタイルがバラバラ（#・**などの記号が出る）
+- プロンプトで記号禁止を指示しているが守られないことがある
+- キャッシュがあると古いスタイルが表示される場合あり
+- 対策：Supabaseのdigest_cacheテーブルを一度クリアして再生成推奨
+
+### 次のタスク
+1. AIダイジェストのスタイル統一（プロンプト改善・XMLタグ活用）
+2. エクスポート機能
+3. 全件強制再処理（残月分）
+
+### 技術メモ
+- .envにANTHROPIC_API_KEY設定済み
+- 年月フィルターは現在月+3ヶ月先まで対応済み
+- ダイジェスト参照期間：選択月〜+2ヶ月の昨年データ
