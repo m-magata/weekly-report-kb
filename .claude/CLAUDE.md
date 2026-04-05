@@ -302,22 +302,23 @@ SUPABASE_KEY=<anon key>
 - xls形式黒背景検出対応（formatting_info=True・_XlrdCellWrapper改修）
 - 強制上書きUI追加（/upload/batch?force=true）
 - /api/highlights エンドポイント（has_highlight=trueの横断取得）
-- AIダイジェスト機能（/api/highlights/summary・キャッシュ・コピー・再生成）
+- AIダイジェスト機能（/api/highlights/summary・キャッシュ・再生成）
 - digest_cacheテーブル作成済み（Supabase）
 - 年月フィルター現在月+3ヶ月先まで対応
+- AIダイジェストのスタイル統一（プロンプトをXMLタグ構造化・systemパラメータ追加・/summaryと/digestを同一プロンプトに統一）
+- AIダイジェスト期間を当月のみに変更（昨年同月1ヶ月分）
+- AIダイジェスト表示の見出し太字化・出典グレー表示
+- コピーボタンをPDF出力ボタンに変更（BIZ UDPGothic・A4縦1枚強制縮小・上下10mm左右5mm余白）
 
 ### 現在の問題
-- AIダイジェストのスタイルがバラバラ（#・**などの記号が出る）
-- プロンプトで記号禁止を指示しているが守られないことがある
-- キャッシュがあると古いスタイルが表示される場合あり
-- 対策：Supabaseのdigest_cacheテーブルを一度クリアして再生成推奨
+- なし（スタイル崩れは解消済み）
 
 ### 次のタスク
-1. AIダイジェストのスタイル統一（プロンプト改善・XMLタグ活用）
-2. エクスポート機能
-3. 全件強制再処理（残月分）
+1. エクスポート機能（CSV/Excel出力）
+2. 全件強制再処理（残月分）
 
 ### 技術メモ
 - .envにANTHROPIC_API_KEY設定済み
 - 年月フィルターは現在月+3ヶ月先まで対応済み
-- ダイジェスト参照期間：選択月〜+2ヶ月の昨年データ
+- ダイジェスト参照期間：選択月の昨年同月1ヶ月分（month_from=month_to=選択月）
+- プロンプトは _build_prompt() 関数で生成（XMLタグ構造）、system パラメーターでMarkdown記号禁止を明示
