@@ -1204,13 +1204,13 @@ async function fetchDigest(force = false) {
   const [y, m] = filterMonth.split('-').map(Number);
   const prevY  = y - 1;
   const mFrom  = m;
-  const mTo    = Math.min(12, m + 2);
+  const mTo    = m;
   _hlParams = { year: prevY, month_from: mFrom, month_to: mTo };
 
   const panel = document.getElementById('hlPanel');
   const body  = document.getElementById('hlPanelBody');
   document.getElementById('hlPanelTitle').textContent =
-    `昨年同月の注意事項 — ${prevY}年${mFrom}〜${mTo}月`;
+    `昨年同月の注意事項 — ${prevY}年${mFrom}月`;
 
   panel.classList.add('visible');
   body.innerHTML = `<div class="hl-empty">
@@ -1242,14 +1242,22 @@ function renderAiSummary(summary) {
     return;
   }
 
-  // Markdown 風の見出し（## / **）を簡易レンダリング
+  // 新プロンプト形式（数字. タイトル / 本文 / 出典：）に対応したレンダリング
   const html = summary.split('\n').map(line => {
     if (!line.trim()) return '<div class="blank-line"></div>';
-    if (/^##\s/.test(line)) {
-      return `<div style="font-size:14px;font-weight:700;margin:14px 0 4px;color:var(--text-primary);">${escHtml(line.replace(/^##\s*/, ''))}</div>`;
+    // 冒頭タイトル行（「今年の同時期に注意すべきポイント」）
+    if (/^今年の同時期/.test(line)) {
+      return `<div style="font-size:15px;font-weight:700;margin:0 0 4px;color:var(--text-primary);">${escHtml(line)}</div>`;
     }
-    const inlined = escHtml(line).replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
-    return `<div class="text-line">${inlined}</div>`;
+    // 番号見出し行（例：1. タイトル）
+    if (/^\d+\.\s/.test(line)) {
+      return `<div style="font-size:14px;font-weight:700;margin:14px 0 4px;color:var(--text-primary);">${escHtml(line)}</div>`;
+    }
+    // 出典行
+    if (/^出典：/.test(line)) {
+      return `<div style="font-size:12px;color:var(--text-secondary);margin:4px 0 8px;">${escHtml(line)}</div>`;
+    }
+    return `<div class="text-line">${escHtml(line)}</div>`;
   }).join('');
 
   // コピー・再生成ボタン
@@ -1265,22 +1273,52 @@ function renderAiSummary(summary) {
     <div class="hl-item-header" style="justify-content:space-between;">
       <span class="hl-store">🤖 AI サマリー</span>
       <div style="display:flex;gap:8px;">
-        <button id="hlCopyBtn" style="
+        <button id="hlPrintBtn" style="
           padding:5px 14px; border-radius:6px; border:1px solid var(--border);
           background:var(--surface); color:var(--text-secondary); font-size:12px;
-          font-weight:600; cursor:pointer;">📋 コピー</button>
+          font-weight:600; cursor:pointer;">🖨️ PDF出力</button>
         ${regenBtn}
       </div>
     </div>
     <div class="hl-content" style="max-height:none;" id="hlSummaryText">${html}</div>
   </div>`;
 
-  document.getElementById('hlCopyBtn').addEventListener('click', () => {
-    navigator.clipboard.writeText(summary).then(() => {
-      const btn = document.getElementById('hlCopyBtn');
-      btn.textContent = '✅ コピー完了';
-      setTimeout(() => { btn.textContent = '📋 コピー'; }, 2000);
-    });
+  document.getElementById('hlPrintBtn').addEventListener('click', () => {
+    const title = document.getElementById('hlPanelTitle').textContent;
+    const bodyHtml = document.getElementById('hlSummaryText').innerHTML;
+    const printWin = window.open('', '_blank', 'width=800,height=1000');
+    printWin.document.write(`<!DOCTYPE html>
+<html lang="ja"><head>
+<meta charset="UTF-8">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=BIZ+UDPGothic&display=swap" rel="stylesheet">
+<style>
+  @page { size: A4 portrait; margin: 10mm 5mm; }
+  * { box-sizing: border-box; }
+  body { font-family: 'BIZ UDPGothic', sans-serif; font-size: 11px; margin: 0; padding: 0; }
+  h1 { font-size: 13px; font-weight: 700; text-decoration: underline; margin: 0 0 8px; }
+  #printBody { width: 100%; transform-origin: top left; }
+  .blank-line { height: 6px; }
+  .text-line { margin: 2px 0; line-height: 1.6; }
+</style>
+</head><body>
+<h1>${title}</h1>
+<div id="printBody">${bodyHtml}</div>
+<script>
+  window.addEventListener('load', function() {
+    var body = document.getElementById('printBody');
+    var pageH = (297 - 20) * 3.7795;
+    if (body.scrollHeight > pageH) {
+      var scale = pageH / body.scrollHeight;
+      body.style.transform = 'scale(' + scale + ')';
+      body.style.width = (100 / scale) + '%';
+    }
+    window.print();
+    window.close();
+  });
+<\/script>
+</body></html>`);
+    printWin.document.close();
   });
 
   if (isLocal) {

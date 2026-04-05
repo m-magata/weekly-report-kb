@@ -105,23 +105,36 @@ def get_highlights(
     return _fetch_highlights(client, year, month_from, month_to)
 
 
-_DIGEST_PROMPT = (
-    "以下は昨年同時期の全店舗の重要コメントです。\n"
-    "今年の同時期に注意すべきポイントを以下のフォーマットで必ず出力してください。\n\n"
-    "出力フォーマット（厳守）：\n"
-    "今年の同時期に注意すべきポイント\n\n"
-    "1. タイトル\n"
-    "原文そのまま引用した内容。\n"
-    "出典：店舗名 年月 シート名\n\n"
-    "2. タイトル\n"
-    "...\n\n"
-    "厳守ルール：\n"
-    "- #・##・###・**・【】・■などの記号は絶対に使わない\n"
-    "- 見出しは数字とピリオドのみ（例：1. 2. 3.）\n"
-    "- 内容は原文をそのまま引用し要約・解釈しない\n"
-    "- 出典は必ず「出典：店舗名 年月 シート名」の形式\n"
-    "- データがない場合は「該当データがありません」とのみ出力"
-)
+def _build_prompt(source_text: str) -> str:
+    return f"""\
+以下の<重要コメント>タグ内に昨年同時期の全店舗の重要コメントを示します。
+
+<重要コメント>
+{source_text}
+</重要コメント>
+
+今年の同時期に注意すべきポイントを、以下の<フォーマット>の通りに出力してください。
+
+<フォーマット>
+今年の同時期に注意すべきポイント
+
+1. （タイトル）
+（原文そのままの引用）
+出典：（店舗名） （年月） （シート名）
+
+2. （タイトル）
+（原文そのままの引用）
+出典：（店舗名） （年月） （シート名）
+</フォーマット>
+
+<厳守ルール>
+- 出力は<フォーマット>の内容のみ。タグ自体は出力しない
+- #・##・###・**・*・__・【】・■・---・===などの記号は絶対に使わない
+- 見出しは「数字.（半角スペース）タイトル」の形式のみ（例：1. 売上低下への注意）
+- 内容は原文をそのまま引用し、要約・解釈・編集しない
+- 出典は必ず「出典：店舗名 年月 シート名」の形式で記載
+- データがない場合は「該当データがありません」とのみ出力し、他は何も書かない
+</厳守ルール>"""
 
 
 def _build_source_text(items: list[HighlightItem]) -> str:
@@ -137,7 +150,7 @@ def _build_source_text(items: list[HighlightItem]) -> str:
     return "\n".join(lines)
 
 
-def _call_anthropic(source_text: str, prompt_prefix: str) -> str:
+def _call_anthropic(source_text: str) -> str:
     api_key = os.environ.get("ANTHROPIC_API_KEY")
     if not api_key:
         raise HTTPException(status_code=500, detail="ANTHROPIC_API_KEY が設定されていません")
@@ -145,16 +158,14 @@ def _call_anthropic(source_text: str, prompt_prefix: str) -> str:
     message = ai_client.messages.create(
         model=MODEL,
         max_tokens=2048,
-        messages=[{"role": "user", "content": f"{prompt_prefix}\n\n{source_text}"}],
+        system=(
+            "あなたは小売業の週報データを分析するアシスタントです。"
+            "指定されたフォーマットと厳守ルールを必ず守って出力してください。"
+            "Markdownの記号（#・**・*・__・---など）は絶対に使いません。"
+        ),
+        messages=[{"role": "user", "content": _build_prompt(source_text)}],
     )
     return message.content[0].text if message.content else ""
-
-
-_SUMMARY_PROMPT = (
-    "以下は昨年同時期の全店舗の重要コメントです。\n"
-    "今年の同時期に注意すべきポイントをタイトルと内容でまとめてください。\n"
-    "各ポイントに出典店舗名・月を付けてください。"
-)
 
 
 def _cache_key(year: int, month_from: int, month_to: int) -> str:
@@ -187,7 +198,7 @@ def summarize_highlights(req: SummaryRequest, client: Client = Depends(get_clien
     if not source_text:
         return SummaryResponse(summary="該当データがありません")
 
-    summary = _call_anthropic(source_text, _SUMMARY_PROMPT)
+    summary = _call_anthropic(source_text)
     _set_cache(client, key, summary)
     return SummaryResponse(summary=summary)
 
@@ -198,4 +209,4 @@ def digest_highlights(req: SummaryRequest, client: Client = Depends(get_client))
     source_text = _build_source_text(items)
     if not source_text:
         return DigestResponse(digest="該当データがありません")
-    return DigestResponse(digest=_call_anthropic(source_text, _DIGEST_PROMPT))
+    return DigestResponse(digest=_call_anthropic(source_text))
