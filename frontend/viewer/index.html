@@ -496,7 +496,7 @@
     <button id="globalSearchBtn" class="header-search-btn">検索</button>
   </div>
   <nav class="header-nav" style="margin-left:8px;">
-    <a href="/upload/" class="nav-link">アップロード</a>
+    <a href="/upload/" class="nav-link" id="uploadNavLink">アップロード</a>
     <a href="/viewer/" class="nav-link active">閲覧画面</a>
   </nav>
 </header>
@@ -732,10 +732,12 @@ function populateMonthSelector() {
       return `<option value="${ym}">${y}年${m}月</option>`;
     }).join('');
 
-  // 最新月をデフォルト選択
-  if (months.length) {
-    sel.value = months[0];
-    filterMonth = months[0];
+  // 当月をデフォルト選択（なければ空）
+  const today = new Date();
+  const currentMonth = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
+  if (months.includes(currentMonth)) {
+    sel.value = currentMonth;
+    filterMonth = currentMonth;
   }
 }
 
@@ -1367,6 +1369,10 @@ document.getElementById('searchModalBackdrop').addEventListener('click', closeSe
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape') { closeSearchModal(); closeHighlights(); }
 });
+
+// アップロードリンク: ローカルのみ表示
+const _isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+document.getElementById('uploadNavLink').style.display = _isLocal ? '' : 'none';
 
 loadReports();
 </script>

@@ -309,6 +309,12 @@ SUPABASE_KEY=<anon key>
 - AIダイジェスト期間を当月のみに変更（昨年同月1ヶ月分）
 - AIダイジェスト表示の見出し太字化・出典グレー表示
 - コピーボタンをPDF出力ボタンに変更（BIZ UDPGothic・A4縦1枚強制縮小・上下10mm左右5mm余白）
+- Railwayへの本番デプロイ完了
+  URL: https://weekly-report-kb-production.up.railway.app/viewer/
+  - nixpacks.toml / railway.toml / Procfile 追加
+  - pydantic>=2.11.7 に変更（supabase依存関係解消）
+  - 環境変数（SUPABASE_URL / SUPABASE_KEY / ANTHROPIC_API_KEY）設定済み
+  - GitHubへのpush → 自動デプロイ設定済み
 
 ### 現在の問題
 - なし（スタイル崩れは解消済み）
@@ -316,6 +322,7 @@ SUPABASE_KEY=<anon key>
 ### 次のタスク
 1. エクスポート機能（CSV/Excel出力）
 2. 全件強制再処理（残月分）
+3. 他部署週報への対応
 
 ### 技術メモ
 - .envにANTHROPIC_API_KEY設定済み

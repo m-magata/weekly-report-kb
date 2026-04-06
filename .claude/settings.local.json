@@ -18,7 +18,10 @@
       "Bash(del:*)",
       "Bash(echo \"exit: $?\")",
       "Bash(git add:*)",
-      "Bash(git commit:*)"
+      "Bash(git commit:*)",
+      "Bash(git -C C:/Users/landrome/weekly-report-kb log --all --full-history -- .env)",
+      "Bash(git -C C:/Users/landrome/weekly-report-kb remote -v)",
+      "Bash(git -C C:/Users/landrome/weekly-report-kb log --oneline -3)"
     ]
   }
 }

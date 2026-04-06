@@ -10,6 +10,7 @@ import argparse
 import io
 import os
 import sys
+import time
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
 from pathlib import Path
 
@@ -55,7 +56,19 @@ for f in files:
         continue
     try:
         parsed = parse_excel(f)
-        save_parsed_report(client, parsed)
+        last_exc = None
+        for attempt in range(1, 4):
+            try:
+                save_parsed_report(client, parsed)
+                last_exc = None
+                break
+            except Exception as e:
+                last_exc = e
+                if attempt < 3:
+                    print(f"  RETRY({attempt}) {f.name}: {e} — 5秒後に再試行")
+                    time.sleep(5)
+        if last_exc is not None:
+            raise last_exc
         role = f"[{parsed.submitter_role}]" if parsed.submitter_role != "店長" else ""
         print(f"  OK   {f.name}  {parsed.store_name}{role}  {parsed.week_start}〜{parsed.week_end}")
         ok += 1
