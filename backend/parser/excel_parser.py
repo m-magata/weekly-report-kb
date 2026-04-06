@@ -309,18 +309,33 @@ def _parse_sales_sheet(
 
         for col in range(DATA_COL_START, DATA_COL_END):
             day_val = date_row[col] if col < len(date_row) else None
-            if not isinstance(day_val, (int, float)) or day_val <= 0:
-                continue
-            day = int(day_val)
 
-            # 月またぎ検出: 日が前の日より小さくなったら翌月へ
-            if prev_day is not None and day < prev_day:
-                if current_month == 12:
-                    current_month = 1
-                    current_year += 1
+            # '3_30' / '5_1' のような「月_日」形式文字列の処理
+            if isinstance(day_val, str) and '_' in day_val:
+                parts = day_val.split('_')
+                if len(parts) == 2 and parts[0].isdigit() and parts[1].isdigit():
+                    new_month = int(parts[0])
+                    day = int(parts[1])
+                    # 月が変わる場合は current_month / current_year を更新
+                    if new_month != current_month:
+                        if new_month < current_month and current_month == 12:
+                            current_year += 1
+                        current_month = new_month
+                    prev_day = day
                 else:
-                    current_month += 1
-            prev_day = day
+                    continue
+            elif isinstance(day_val, (int, float)) and day_val > 0:
+                day = int(day_val)
+                # 月またぎ検出: 日が前の日より小さくなったら翌月へ
+                if prev_day is not None and day < prev_day:
+                    if current_month == 12:
+                        current_month = 1
+                        current_year += 1
+                    else:
+                        current_month += 1
+                prev_day = day
+            else:
+                continue
 
             try:
                 record_date = date(current_year, current_month, day)
