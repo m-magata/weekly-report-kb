@@ -316,13 +316,22 @@ SUPABASE_KEY=<anon key>
   - 環境変数（SUPABASE_URL / SUPABASE_KEY / ANTHROPIC_API_KEY）設定済み
   - GitHubへのpush → 自動デプロイ設定済み
 
+## 2026-04-06 引き継ぎ
+
+### 完了済み機能
+- デフォルト表示月を最新月→当月（yyyy-MM）に変更
+- アップロードボタンをlocalhost/127.0.0.1のみ表示に変更（外部アクセスでは非表示）
+- m_storeにこてはし三角町店（store_id=24, store_code=0074, area_id=3）追加
+- reprocess_all.pyにリトライロジック追加（WinError 10035対策、5秒待機×最大3回）
+- requirements.txtからpandasを削除（未使用、Railwayビルド高速化）
+- 売上進捗表の月_日形式日付文字列パース対応（'3_30'/'5_1'形式、都賀店26-04.xlsケース）
+
 ### 現在の問題
-- なし（スタイル崩れは解消済み）
+- なし
 
 ### 次のタスク
 1. エクスポート機能（CSV/Excel出力）
-2. 全件強制再処理（残月分）
-3. 他部署週報への対応
+2. 他部署週報への対応
 
 ### 技術メモ
 - .envにANTHROPIC_API_KEY設定済み
