@@ -10,7 +10,7 @@
       "Bash(pkill -f uvicorn)",
       "Bash(netstat -ano)",
       "Bash(xargs rm:*)",
-      "Bash(find /c/Users/landrome/weekly-report-kb -name \"*.pyc\" -delete)",
+      "Bash(find /c/Users/landrome/Desktop/weekly-report-kb -name \"*.pyc\" -delete)",
       "Bash(ls -lh data/*.xlsx)",
       "Bash(pkill -f \"uvicorn.*9000\")",
       "Bash(grep LISTEN uvicorn backend.main:app --port 9100)",
@@ -19,9 +19,9 @@
       "Bash(echo \"exit: $?\")",
       "Bash(git add:*)",
       "Bash(git commit:*)",
-      "Bash(git -C C:/Users/landrome/weekly-report-kb log --all --full-history -- .env)",
-      "Bash(git -C C:/Users/landrome/weekly-report-kb remote -v)",
-      "Bash(git -C C:/Users/landrome/weekly-report-kb log --oneline -3)",
+      "Bash(git -C C:/Users/landrome/Desktop/weekly-report-kb log --all --full-history -- .env)",
+      "Bash(git -C C:/Users/landrome/Desktop/weekly-report-kb remote -v)",
+      "Bash(git -C C:/Users/landrome/Desktop/weekly-report-kb log --oneline -3)",
       "Bash(git push:*)",
       "Bash(ls data/060* data/060*.xls*)"
     ]
