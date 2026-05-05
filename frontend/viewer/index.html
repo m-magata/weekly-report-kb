@@ -593,12 +593,17 @@ function isoMonday(d) {
   t.setDate(t.getDate() - ((t.getDay() + 6) % 7));
   return t;
 }
+function isoSunday(d) {
+  const t = isoMonday(d);
+  t.setDate(t.getDate() + 6);
+  return t;
+}
 function groupByWeek(sales) {
   const map = new Map();
   for (const row of sales) {
     const d  = parseDate(row.date);
     const wn = isoWeek(d);
-    if (!map.has(wn)) map.set(wn, { weekNum: wn, monday: isoMonday(d), days: [] });
+    if (!map.has(wn)) map.set(wn, { weekNum: wn, sunday: isoSunday(d), days: [] });
     map.get(wn).days.push(row);
   }
   return [...map.values()].sort((a, b) => a.weekNum - b.weekNum);
@@ -857,7 +862,7 @@ function renderDetail(report, sales, texts) {
 
   // ---- HTML 生成（inline onclick は一切使わない） ----
   const tabBtns = weeks.map((w, i) =>
-    `<button class="tab-btn${i === 0 ? ' active' : ''}" data-idx="${i}">第${w.weekNum}週(${fmtMD(w.monday)})</button>`
+    `<button class="tab-btn${i === 0 ? ' active' : ''}" data-idx="${i}">第${w.weekNum}週(${fmtMD(w.sunday)})</button>`
   ).join('');
 
   const tabPanels = weeks.map((w, i) => {

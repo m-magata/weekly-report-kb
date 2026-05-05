@@ -115,8 +115,8 @@ def _upsert_weekly_report(
         client.table("weekly_reports")
         .select("id", count="exact")
         .eq("store_id", store_id)
-        .eq("week_start", str(parsed.week_start))
-        .eq("week_end", str(parsed.week_end))
+        .eq("report_year", parsed.report_year)
+        .eq("report_month", parsed.report_month)
         .eq("submitter_role", parsed.submitter_role)
         .execute()
     )
@@ -134,7 +134,7 @@ def _upsert_weekly_report(
                 "report_year": parsed.report_year,
                 "report_month": parsed.report_month,
             },
-            on_conflict="store_id,week_start,week_end,submitter_role",
+            on_conflict="store_id,report_year,report_month,submitter_role",
         )
         .execute()
     )
