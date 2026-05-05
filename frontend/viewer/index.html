@@ -565,6 +565,7 @@ let allStores    = [];  // 全店舗マスタ（未提出グレーアウト用�
 let filterMonth  = '';
 let filterArea   = '';
 let filterSearch = '';
+let _lastSearchQuery = '';
 
 /* ===== 日付ユーティリティ ===== */
 function parseDate(iso) {
@@ -669,6 +670,16 @@ function escHtml(s) {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
+/* 検索キーワードを <mark> でハイライト（HTMLエスケープ済み文字列に対して適用） */
+function highlightQuery(escapedHtml) {
+  if (!_lastSearchQuery || !escapedHtml) return escapedHtml;
+  const escapedQ = escHtml(_lastSearchQuery);
+  if (!escapedQ) return escapedHtml;
+  const pattern = new RegExp(escRegex(escapedQ), 'gi');
+  return escapedHtml.replace(pattern, m =>
+    `<mark style="background:#fff176;border-radius:2px;padding:0 2px">${m}</mark>`);
+}
+
 /* テキストを行ごとのHTML要素に変換（★行は連続をまとめて赤枠段落、★文字は非表示） */
 function renderBodyHtml(text) {
   if (!text) return '';
@@ -678,7 +689,7 @@ function renderBodyHtml(text) {
 
   function flushHl() {
     if (hlBuf.length === 0) return;
-    parts.push(`<div class="hl-line">${escHtml(hlBuf.join(' '))}</div>`);
+    parts.push(`<div class="hl-line">${highlightQuery(escHtml(hlBuf.join(' ')))}</div>`);
     hlBuf = [];
   }
 
@@ -690,7 +701,7 @@ function renderBodyHtml(text) {
       if (!line.trim()) {
         parts.push('<div class="blank-line"></div>');
       } else {
-        parts.push(`<div class="text-line">${escHtml(line)}</div>`);
+        parts.push(`<div class="text-line">${highlightQuery(escHtml(line))}</div>`);
       }
     }
   }
@@ -822,13 +833,21 @@ function renderList(reports) {
 }
 
 /* ===== 詳細表示 ===== */
-async function selectReport(id) {
-  if (currentId === id) return;
+async function selectReport(id, sheetIndex) {
+  const sameReport = currentId === id;
   currentId = id;
 
   // バッジのアクティブ状態を更新
   document.querySelectorAll('.role-badge').forEach(b =>
     b.classList.toggle('active', Number(b.dataset.id) === id));
+
+  // アクティブなバッジを画面内にスクロール
+  const activeBadge = document.querySelector('.role-badge.active');
+  if (activeBadge) {
+    activeBadge.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }
+
+  if (sameReport) return;
 
   const main = document.getElementById('mainArea');
   main.innerHTML = '<div class="loading"><div class="spinner"></div>読み込み中...</div>';
@@ -841,13 +860,13 @@ async function selectReport(id) {
     const sales  = await salesRes.json();
     const texts  = await textsRes.json();
     const report = allReports.find(r => r.id === id);
-    renderDetail(report, sales, texts);
+    renderDetail(report, sales, texts, sheetIndex);
   } catch (e) {
     main.innerHTML = `<div class="loading" style="color:#ef4444;">エラー: ${e.message}</div>`;
   }
 }
 
-function renderDetail(report, sales, texts) {
+function renderDetail(report, sales, texts, sheetIndex) {
   // 既存グラフを破棄
   if (salesChart) { salesChart.destroy(); salesChart = null; }
 
@@ -860,9 +879,16 @@ function renderDetail(report, sales, texts) {
   const weeks      = groupByWeek(sales);
   const contentTexts = texts.filter(t => t.content && t.content.trim());
 
+  // sheetIndex が指定された場合、対応するタブをアクティブに
+  let activeTabIdx = 0;
+  if (sheetIndex) {
+    const idx = contentTexts.findIndex(t => t.sheet_index === Number(sheetIndex));
+    if (idx >= 0 && idx < weeks.length) activeTabIdx = idx;
+  }
+
   // ---- HTML 生成（inline onclick は一切使わない） ----
   const tabBtns = weeks.map((w, i) =>
-    `<button class="tab-btn${i === 0 ? ' active' : ''}" data-idx="${i}">第${w.weekNum}週(${fmtMD(w.sunday)})</button>`
+    `<button class="tab-btn${i === activeTabIdx ? ' active' : ''}" data-idx="${i}">第${w.weekNum}週(${fmtMD(w.sunday)})</button>`
   ).join('');
 
   const tabPanels = weeks.map((w, i) => {
@@ -892,11 +918,11 @@ function renderDetail(report, sales, texts) {
       const gridItems = items.map(({ label, result }) => {
         const cls = result === '○' ? 'ok' : result ? 'ng' : '';
         return `<div class="bousai-item ${cls}">
-          <span class="bousai-label">${escHtml(label)}</span>
+          <span class="bousai-label">${highlightQuery(escHtml(label))}</span>
           <span class="bousai-result">${result || ''}</span>
         </div>`;
       }).join('');
-      const commentHtml = comment ? `<div class="bousai-comment">${escHtml(comment)}</div>` : '';
+      const commentHtml = comment ? `<div class="bousai-comment">${highlightQuery(escHtml(comment))}</div>` : '';
       return `<details class="bousai-details">
         <summary class="bousai-summary">▶ 防災チェックリスト（${items.length}項目）</summary>
         <div class="bousai-grid">${gridItems}</div>
@@ -904,7 +930,7 @@ function renderDetail(report, sales, texts) {
       </details>`;
     })();
 
-    return `<div class="tab-panel${i === 0 ? ' active' : ''}" data-idx="${i}">
+    return `<div class="tab-panel${i === activeTabIdx ? ' active' : ''}" data-idx="${i}">
       <div class="week-kpi">
         <div class="kpi-pill blue">
           <span class="kp-label">週計売上</span>
@@ -1140,6 +1166,7 @@ function closeSearchModal() {
 async function executeSearch() {
   const q = document.getElementById('globalSearch').value.trim();
   if (!q) return;
+  _lastSearchQuery = q;
 
   openSearchModal();
   document.getElementById('searchModalTitle').textContent = `検索結果: "${q}"`;
@@ -1170,7 +1197,14 @@ function renderSearchResults(results, q) {
   body.innerHTML = results.map(r => {
     const period = `${r.week_start} 〜 ${r.week_end}`;
     const snip   = highlightSnippet(r.snippet, q);
-    return `<div class="search-result-item" data-id="${r.report_id}">
+    const reportInfo = allReports.find(rr => rr.id === r.report_id);
+    const dataYear  = reportInfo?.report_year ?? '';
+    const dataMonth = reportInfo?.report_month ?? '';
+    return `<div class="search-result-item"
+                 data-id="${r.report_id}"
+                 data-sheet-index="${r.sheet_index}"
+                 data-year="${dataYear}"
+                 data-month="${dataMonth}">
       <div class="sr-meta">
         <span class="sr-store">${escHtml(r.store_name)}</span>
         <span class="sr-period">${escHtml(period)}</span>
@@ -1183,7 +1217,24 @@ function renderSearchResults(results, q) {
   body.querySelectorAll('.search-result-item').forEach(item => {
     item.addEventListener('click', () => {
       closeSearchModal();
-      selectReport(Number(item.dataset.id));
+      const reportId   = Number(item.dataset.id);
+      const sheetIndex = Number(item.dataset.sheetIndex) || undefined;
+      const y = Number(item.dataset.year);
+      const m = Number(item.dataset.month);
+
+      // 月フィルターを該当週報の年月に揃える
+      if (y && m) {
+        const ym = `${y}-${String(m).padStart(2, '0')}`;
+        if (filterMonth !== ym) {
+          filterMonth = ym;
+          const sel = document.getElementById('monthFilter');
+          if (sel) sel.value = ym;
+          applyFilter();
+          updateHlBtn();
+        }
+      }
+
+      selectReport(reportId, sheetIndex);
     });
   });
 }
