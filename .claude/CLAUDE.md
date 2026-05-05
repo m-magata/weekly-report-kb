@@ -89,7 +89,7 @@ weekly_reports (
   submitter_role  text not null default '店長',  -- '店長' or '副店長'
   report_year     integer,   -- ファイル名から抽出した年（例: 2026）
   report_month    integer,   -- ファイル名から抽出した月（例: 3）
-  unique (store_id, week_start, week_end, submitter_role)
+  unique (store_id, report_year, report_month, submitter_role)
 )
 
 daily_sales (
@@ -267,6 +267,10 @@ SUPABASE_KEY=<anon key>
 - `report_year` / `report_month` カラム追加（ファイル名から年月を抽出・月分類に使用）
 - 月セレクターと月フィルターを `report_year`/`report_month` ベースに変更（week_end 依存を廃止）
 - reprocess_all.py の UTF-8 出力対応・.xls 対応・一時ファイル除外
+- weekly_reports の重複レコード72件を削除（クリーンアップ）
+- upsertキーを `(store_id,week_start,week_end,submitter_role)` から `(store_id,report_year,report_month,submitter_role)` に変更
+- 存在チェックも同じキーに統一（重複防止）
+- 週タブ表示を月曜日から日曜日に変更（`isoSunday()` 追加・タブラベルを `第N週(MM/DD日曜日)` に）
 
 ### 未着手
 1. **未提出店舗グレーアウト** — m_store 全23店舗を取得し、週報未提出店舗をサイドバーにグレー表示
@@ -347,3 +351,35 @@ SUPABASE_KEY=<anon key>
 - 年月フィルターは現在月+3ヶ月先まで対応済み
 - ダイジェスト参照期間：選択月の昨年同月1ヶ月分（month_from=month_to=選択月）
 - プロンプトは _build_prompt() 関数で生成（XMLタグ構造）、system パラメーターでMarkdown記号禁止を明示
+
+## 2026-05-05 引き継ぎ
+
+### 完了済み機能
+- weekly_reports の重複レコード72件を削除（クリーンアップ）
+  - 同一 (store_id, report_year, report_month, submitter_role) で複数レコードが存在していた44グループを整理
+  - 各グループで `week_end` が最大の1件のみ残し、それ以外を削除
+  - daily_sales / report_texts は ON DELETE CASCADE で連動削除
+- weekly_reports の unique 制約を変更
+  - 旧: `(store_id, week_start, week_end, submitter_role)`
+  - 新: `(store_id, report_year, report_month, submitter_role)`
+  - Supabase ダッシュボードで SQL 実行（DROP CONSTRAINT + ADD CONSTRAINT）
+- crud.py の `_upsert_weekly_report()` を新キーに合わせて修正
+  - `on_conflict` パラメータを新キーに変更
+  - 既存レコード存在チェック（`is_new` 判定）も新キーに統一
+  - 同月の再アップロード時に古い daily_sales / report_texts が確実に DELETE される動作に
+- 週タブ表示を月曜日から日曜日に変更
+  - `isoSunday(d)` 関数を追加（`isoMonday(d) + 6日`）
+  - `groupByWeek()` の保持フィールドを `monday` → `sunday` に変更
+  - タブラベル: `第14週(03/30)` → `第14週(04/05)` のように週末日表示
+
+### 背景・経緯
+- 三咲店 26-04 ファイルで DB に3件のレコードが存在していたことから調査開始
+- 原因: 旧 unique 制約 `(store_id, week_start, week_end, submitter_role)` のもとで、月の途中で同じファイルが段階アップロードされると、`week_end` だけ伸びた別レコードとして追加され、古い行が残存していた
+- 全店舗で同様の重複が44グループ・72レコード分蓄積していた
+
+### 現在の問題
+- なし
+
+### 次のタスク
+1. エクスポート機能（CSV/Excel出力）
+2. 他部署週報への対応
