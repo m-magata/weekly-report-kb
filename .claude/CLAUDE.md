@@ -388,3 +388,30 @@ SUPABASE_KEY=<anon key>
 ### 次のタスク
 1. エクスポート機能（CSV/Excel出力）
 2. 他部署週報への対応
+
+## 2026-06-16 引き継ぎ
+
+### 完了済み機能
+- RLS（Row Level Security）対応
+  - Supabaseの全テーブルでRLSが有効になっていたことを確認
+    - anonキーでは SELECT は可、INSERT は `42501`（RLS違反）で拒否される状態だった
+  - 書き込み処理をservice_roleキーに変更（RLSバイパス）
+  - 読み取りはanonキーのまま維持
+  - `database.py` に `get_write_client()` を追加（service_roleキー・シングルトン）
+    - `get_client()`（anon・読み取り）と2クライアント構成に
+  - `crud.py` の書き込み処理（weekly_reports upsert / daily_sales・report_texts の insert・delete）を `get_write_client()` に切り替え
+    - 読み取り（店舗ルックアップ・存在チェック count）は anon のまま
+    - ルーター側のシグネチャ（`save_parsed_report(client, parsed)`）は不変 → upload.py / reprocess_all.py の修正不要
+  - `.env` に `SUPABASE_SERVICE_ROLE_KEY` を追加（gitignore済み）
+  - service_role での INSERT→DELETE 実DBラウンドトリップで動作検証済み
+  - Railwayへの反映は未対応（ローカルのみ）
+    - ⚠️ 本番で書き込みを使うなら Railway環境変数に `SUPABASE_SERVICE_ROLE_KEY` の設定が必要
+- プロジェクトフォルダをDesktopに移動済み
+  （C:\Users\landrome\Desktop\weekly-report-kb）
+
+### 現在の問題
+- なし
+
+### 次のタスク
+1. エクスポート機能（CSV/Excel出力）
+2. 他部署週報への対応

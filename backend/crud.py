@@ -13,6 +13,7 @@ import re
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from supabase import Client
 
+from backend.database import get_write_client
 from backend.parser.excel_parser import ParsedReport
 
 # store_code → store_id のプロセス内キャッシュ
@@ -27,14 +28,18 @@ def save_parsed_report(client: Client, parsed: ParsedReport) -> dict:
       - 初回アップロード: 3リクエスト (lookup_store[キャッシュ後0] + upsert_wr + 並列2)
       - 再アップロード  : 4リクエスト (同上 + 並列DELETE×2 → INSERT×2)
     """
+    # 読み取り（店舗ルックアップ・存在チェック）は anon クライアント、
+    # 書き込み（upsert/insert/delete）は service_role クライアントを使用する。
+    write_client = get_write_client()
+
     store_id = _get_store_id(client, parsed)
-    wr, is_new = _upsert_weekly_report(client, store_id, parsed)
+    wr, is_new = _upsert_weekly_report(client, write_client, store_id, parsed)
     wr_id: int = wr["id"]
 
     # daily_sales と report_texts を並列実行
     with ThreadPoolExecutor(max_workers=2) as pool:
-        f_sales = pool.submit(_write_daily_sales, client, wr_id, parsed, is_new)
-        f_texts = pool.submit(_write_report_texts, client, wr_id, parsed, is_new)
+        f_sales = pool.submit(_write_daily_sales, write_client, wr_id, parsed, is_new)
+        f_texts = pool.submit(_write_report_texts, write_client, wr_id, parsed, is_new)
         # 例外を呼び出し元に伝播させる
         f_sales.result()
         f_texts.result()
@@ -104,11 +109,14 @@ def _extract_store_code(filename: str) -> str | None:
 # ---------------------------------------------------------------------------
 
 def _upsert_weekly_report(
-    client: Client, store_id: int, parsed: ParsedReport
+    client: Client, write_client: Client, store_id: int, parsed: ParsedReport
 ) -> tuple[dict, bool]:
     """
     weekly_reports を upsert し、(レコード, is_new) を返す。
     is_new=True なら子レコードの DELETE を省略できる。
+
+    client       : 読み取り用（anon）— 既存レコードの存在チェック
+    write_client : 書き込み用（service_role）— upsert
     """
     # upsert 前に既存レコードの有無を確認（1リクエスト節約のため count 使用）
     existing = (
@@ -123,7 +131,7 @@ def _upsert_weekly_report(
     is_new = existing.count == 0
 
     res = (
-        client.table("weekly_reports")
+        write_client.table("weekly_reports")
         .upsert(
             {
                 "store_id": store_id,
@@ -146,11 +154,11 @@ def _upsert_weekly_report(
 # ---------------------------------------------------------------------------
 
 def _write_daily_sales(
-    client: Client, wr_id: int, parsed: ParsedReport, is_new: bool
+    write_client: Client, wr_id: int, parsed: ParsedReport, is_new: bool
 ) -> None:
-    """新規なら DELETE スキップ。バルクインサートで1リクエスト。"""
+    """新規なら DELETE スキップ。バルクインサートで1リクエスト。write_client は service_role。"""
     if not is_new:
-        client.table("daily_sales").delete().eq("weekly_report_id", wr_id).execute()
+        write_client.table("daily_sales").delete().eq("weekly_report_id", wr_id).execute()
 
     if not parsed.daily_sales:
         return
@@ -167,20 +175,20 @@ def _write_daily_sales(
         }
         for rec in parsed.daily_sales
     ]
-    client.table("daily_sales").insert(rows).execute()
+    write_client.table("daily_sales").insert(rows).execute()
 
 
 def _replace_report_texts(client: Client, wr_id: int, parsed: ParsedReport) -> None:
-    """後方互換のために残す（旧 crud 呼び出し用）。"""
-    _write_report_texts(client, wr_id, parsed, is_new=False)
+    """後方互換のために残す（旧 crud 呼び出し用）。書き込みは service_role を使用。"""
+    _write_report_texts(get_write_client(), wr_id, parsed, is_new=False)
 
 
 def _write_report_texts(
-    client: Client, wr_id: int, parsed: ParsedReport, is_new: bool
+    write_client: Client, wr_id: int, parsed: ParsedReport, is_new: bool
 ) -> None:
-    """新規なら DELETE スキップ。バルクインサートで1リクエスト。"""
+    """新規なら DELETE スキップ。バルクインサートで1リクエスト。write_client は service_role。"""
     if not is_new:
-        client.table("report_texts").delete().eq("weekly_report_id", wr_id).execute()
+        write_client.table("report_texts").delete().eq("weekly_report_id", wr_id).execute()
 
     if not parsed.report_texts:
         return
@@ -195,4 +203,4 @@ def _write_report_texts(
         }
         for rec in parsed.report_texts
     ]
-    client.table("report_texts").insert(rows).execute()
+    write_client.table("report_texts").insert(rows).execute()
