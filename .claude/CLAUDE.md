@@ -51,6 +51,7 @@ weekly-report-kb/
 ├── data/                      # アップロード済み Excel ファイル置き場
 ├── schema.sql                 # Supabase 上のテーブル定義（参照用）
 ├── reprocess_all.py           # data/ 全ファイル再パース・DB 上書きスクリプト
+├── auto_upload.py             # 共有フォルダの月別フォルダを自動取り込みするスクリプト
 └── requirements.txt
 ```
 
@@ -415,3 +416,63 @@ SUPABASE_KEY=<anon key>
 ### 次のタスク
 1. エクスポート機能（CSV/Excel出力）
 2. 他部署週報への対応
+
+## 2026-08-10 引き継ぎ
+
+### 完了済み機能
+- `auto_upload.py` を新規作成（自動取り込みスクリプト）
+  - 対象フォルダ: `Q:\共有\110エリア／店長\01.店長週報\2026年`
+  - 年フォルダ名（`2026年`）から年を読み、当月までの月フォルダを対象とする
+    - 過年度フォルダなら12月まで、翌年度以降なら対象なし
+  - HTTP を経由せず `backend.parser.excel_parser` / `backend.crud` を直接呼び出す
+  - スキップ判定を DB の unique キー `(store_code, report_year, report_month, submitter_role)` ベースに変更
+    - `reprocess_all.py` は `source_filename` 一致で判定していたが、この3要素はすべてファイル名から決まるため Excel を開かずに判定できる
+    - スペース違いの重複ファイル（`041販売部週報26-01.xlsx` と `041 販売部週報 26-01.xlsx`）も同一キーとして正しくスキップされる
+  - リトライは通信起因エラー（WinError 10035 / connection / timeout 等）のみ 5秒待機×最大3回
+    - 店舗未登録などの恒久エラーは即座に失敗させる
+  - `--force` で登録済みも含めて全件再処理（上書き）
+  - `~$` 一時ファイル除外・`000` フォーマットファイルは `SkipFileError`
+  - UTF-8 出力強制、`Path(__file__)` 基準の sys.path / .env 解決（起動ディレクトリ非依存）
+  - 月別＋合計のサマリー表を出力、エラー時は exit code 1
+- 2026年7月・8月の週報61件を取り込み（エラー0件）
+  - `weekly_reports` 177件 → 238件
+  - 7月: 31件（店長24・副店長7） / 8月: 30件（店長23・副店長7）
+  - 実行中に `010 販売部週報 26-08.xlsx` で WinError 10035 が発生し、リトライで成功
+- AIサマリーの500エラーを修正（`backend/routers/highlights.py`）
+  - `MODEL` を `claude-sonnet-4-20250514`（2026-06-15 提供終了・404）→ `claude-sonnet-5` に更新
+  - `max_tokens` を 2048 → 16000（`MAX_TOKENS` 定数化）
+    - ※ `claude-sonnet-5` は adaptive thinking が既定で有効で、thinking も同じ `max_tokens` 枠を消費する
+    - 2048 では `stop_reason=max_tokens` で出典付きリストが途中で切れていた（入力は約33,000トークン）
+  - レスポンス取得を `content[0].text` → text ブロック検索に変更
+    - adaptive thinking 有効時は先頭が `ThinkingBlock` になり `AttributeError` で落ちるため
+  - `_set_cache()` を `get_write_client()`（service_role）に変更
+    - 2026-06-16 の RLS 対応が `crud.py` のみで、`highlights.py` が取り残されていた（42501 で拒否）
+  - `_call_anthropic()` で `anthropic.APIError` を捕捉し `HTTPException(status_code=502)` に変換
+  - 動作確認済み: `digest_cache` に `2025-8-8` が新規作成（15件→16件）、HTTP 200 で15項目・3379文字を生成
+
+### 背景・経緯
+- 2026年8月のAIサマリーだけが500になっていた
+- エンドポイントは先に `digest_cache` を読み、ヒットすれば Anthropic API を呼ばずに返す仕様
+- 1〜7月はモデル提供終了前に生成済みのキャッシュを返していただけで、実際にはAPIを叩いていなかった
+- 8月が「モデル提供終了後に初めて新規生成が必要になった月」だったため、そこで初めて表面化した
+
+### 現在の問題
+- なし（コード側）
+
+### データ側の注意
+- 都賀店(060) 7月・8月、こてはし三角町店(074) 7月は売上進捗表が空
+  - 日別売上0件で登録され、`week_start`/`week_end` が実行日にフォールバックする
+  - グラフとKPIは空になるが、週報テキストは取り込めているため閲覧は可能
+  - 074 は 2026-08-06 オープンのため、7月の売上がないのは正常
+- 055 のファイルが売上進捗表ヘッダー上「西白井店」になっている（006のコピー疑い）
+  - 店舗紐付けはファイル名先頭の店舗コードで行うため登録先は正しい
+- `max_tokens=2048` は旧モデル時代からの設定のため、既存のキャッシュ済み1〜7月分のダイジェストも
+  途中で切れている可能性がある。必要なら再生成ボタン（`force=true`）で作り直す
+
+### 次のタスク
+1. エクスポート機能（CSV/Excel出力）
+2. 他部署週報への対応
+
+### 注意
+- ⚠️ Railway へ反映する場合、環境変数に `SUPABASE_SERVICE_ROLE_KEY` の設定が必要
+  （`_set_cache` が service_role を使うようになったため、本番のダイジェスト生成が service_role キーに依存する）

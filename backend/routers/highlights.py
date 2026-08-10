@@ -10,11 +10,14 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from supabase import Client
 
-from backend.database import get_client
+from backend.database import get_client, get_write_client
 
 router = APIRouter(prefix="/api/highlights")
 
-MODEL = "claude-sonnet-4-20250514"
+MODEL = "claude-sonnet-5"
+# 出力上限。2048 では出典付きリストが途中で切れる（stop_reason=max_tokens）。
+# claude-sonnet-5 は adaptive thinking が既定で有効で、thinking も同じ枠を消費する。
+MAX_TOKENS = 16000
 
 
 class HighlightItem(BaseModel):
@@ -155,17 +158,23 @@ def _call_anthropic(source_text: str) -> str:
     if not api_key:
         raise HTTPException(status_code=500, detail="ANTHROPIC_API_KEY が設定されていません")
     ai_client = anthropic.Anthropic(api_key=api_key)
-    message = ai_client.messages.create(
-        model=MODEL,
-        max_tokens=2048,
-        system=(
-            "あなたは小売業の週報データを分析するアシスタントです。"
-            "指定されたフォーマットと厳守ルールを必ず守って出力してください。"
-            "Markdownの記号（#・**・*・__・---など）は絶対に使いません。"
-        ),
-        messages=[{"role": "user", "content": _build_prompt(source_text)}],
-    )
-    return message.content[0].text if message.content else ""
+    try:
+        message = ai_client.messages.create(
+            model=MODEL,
+            max_tokens=MAX_TOKENS,
+            system=(
+                "あなたは小売業の週報データを分析するアシスタントです。"
+                "指定されたフォーマットと厳守ルールを必ず守って出力してください。"
+                "Markdownの記号（#・**・*・__・---など）は絶対に使いません。"
+            ),
+            messages=[{"role": "user", "content": _build_prompt(source_text)}],
+        )
+    except anthropic.APIError as e:
+        raise HTTPException(status_code=502, detail=f"AI生成に失敗しました: {e}")
+
+    # adaptive thinking が有効な場合 content[0] は ThinkingBlock になるため、
+    # 先頭決め打ちではなく text ブロックを探す。
+    return next((b.text for b in message.content if b.type == "text"), "")
 
 
 def _cache_key(year: int, month_from: int, month_to: int) -> str:
@@ -178,7 +187,8 @@ def _get_cache(client: Client, key: str) -> str | None:
 
 
 def _set_cache(client: Client, key: str, text: str) -> None:
-    client.table("digest_cache").upsert(
+    """digest_cache への書き込みは RLS をバイパスする service_role クライアントを使う。"""
+    get_write_client().table("digest_cache").upsert(
         {"cache_key": key, "digest_text": text},
         on_conflict="cache_key",
     ).execute()
