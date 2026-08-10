@@ -52,6 +52,9 @@ weekly-report-kb/
 ├── schema.sql                 # Supabase 上のテーブル定義（参照用）
 ├── reprocess_all.py           # data/ 全ファイル再パース・DB 上書きスクリプト
 ├── auto_upload.py             # 共有フォルダの月別フォルダを自動取り込みするスクリプト
+├── run_auto_upload.bat        # auto_upload.py 実行用バッチ（タスクスケジューラから呼ばれる）
+├── register_task.ps1          # タスクスケジューラ登録用スクリプト
+├── logs/                      # 自動取り込みの実行ログ（gitignore 対象）
 └── requirements.txt
 ```
 
@@ -449,6 +452,27 @@ SUPABASE_KEY=<anon key>
     - 2026-06-16 の RLS 対応が `crud.py` のみで、`highlights.py` が取り残されていた（42501 で拒否）
   - `_call_anthropic()` で `anthropic.APIError` を捕捉し `HTTPException(status_code=502)` に変換
   - 動作確認済み: `digest_cache` に `2025-8-8` が新規作成（15件→16件）、HTTP 200 で15項目・3379文字を生成
+
+### タスクスケジューラ設定（自動実行）
+- Windows タスクスケジューラで `auto_upload.py` を**毎週火曜 9:00** に自動実行
+  - タスク名: `WeeklyReportAutoUpload`
+  - `run_auto_upload.bat` 経由で実行、ログは `logs/auto_upload_YYYYMMDD.log` に追記
+  - 登録は `register_task.ps1` を実行（`Register-ScheduledTask` は管理者権限が必要な場合あり）
+- `StartWhenAvailable = $true` を有効
+  - PCがオフ等で火曜9:00に実行できなかった場合、次回起動時に実行される
+- `AllowStartIfOnBatteries` / `DontStopIfGoingOnBatteries` も有効（バッテリー駆動時も実行）
+- ⚠️ `-LogonType Interactive`（ログオン中のみ実行）で登録すること
+  - `Q:` はネットワークドライブ（`\\DirectCloud\株式会社ランドロームジャパン`）へのマップドライブ
+  - マップされたドライブレターはユーザーセッションごとに割り当てられるため、
+    「ユーザーがログオンしているかどうかにかかわらず実行する」で登録すると `Q:` が見えず、
+    `auto_upload.py` が「ERROR: 対象フォルダが見つかりません」で失敗する
+- ⚠️ `run_auto_upload.bat` のコメントは **ASCII のみ**にすること
+  - `cmd.exe` は `.bat` をシステムコードページ（cp932）で解釈するため、
+    UTF-8 の日本語を書くと `rem` 行が分断されて不正なコマンドとして実行され、バッチが壊れる
+  - ログ中の日本語は `auto_upload.py` が UTF-8 で直接書き出すため文字化けしない
+- ⚠️ `register_task.ps1` は **UTF-8 BOM付き**で保存すること
+  - BOMなしだと PowerShell 5.1 が cp932 として読み、日本語コメントが原因で構文エラーになる
+- 動作確認済み: 手動実行で exit code 0 / 約20秒 / 249件中 239件 DUP・10件 対象外・エラー0件
 
 ### 背景・経緯
 - 2026年8月のAIサマリーだけが500になっていた
