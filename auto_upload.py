@@ -86,26 +86,37 @@ def _folder_year(root: Path) -> int | None:
     return int(m.group(1)) if m else None
 
 
-def _target_months(root: Path, today: date) -> list[tuple[int, Path]]:
-    """root 直下の「<n>月」フォルダのうち、現在月までを (月, パス) の昇順で返す。
+def _target_months(
+    root: Path, today: date, only: list[int] | None = None
+) -> list[tuple[int, Path]]:
+    """root 直下の「<n>月」フォルダを (月, パス) の昇順で返す。
 
-    年フォルダが過年度なら 12 月まで、翌年度以降なら対象なしとする。
+    only 未指定時は現在月まで（年フォルダが過年度なら12月まで、翌年度以降は対象なし）。
+    only 指定時は明示指定を優先し、現在月の上限は適用しない。
     """
-    year = _folder_year(root)
-    if year is None or year == today.year:
-        limit = today.month
-    elif year < today.year:
+    if only:
         limit = 12
     else:
-        limit = 0
+        year = _folder_year(root)
+        if year is None or year == today.year:
+            limit = today.month
+        elif year < today.year:
+            limit = 12
+        else:
+            limit = 0
 
     months: list[tuple[int, Path]] = []
     for d in sorted(root.iterdir()):
         if not d.is_dir():
             continue
         m = MONTH_DIR_RE.match(d.name)
-        if m and 1 <= int(m.group(1)) <= limit:
-            months.append((int(m.group(1)), d))
+        if not m:
+            continue
+        n = int(m.group(1))
+        if only and n not in only:
+            continue
+        if 1 <= n <= limit:
+            months.append((n, d))
     return sorted(months)
 
 
@@ -202,7 +213,18 @@ def main() -> int:
         "--force", action="store_true",
         help="登録済みレコードも含めて全件再処理する（上書き）",
     )
+    ap.add_argument(
+        "--month", type=int, nargs="+", metavar="N",
+        help="対象月を指定する（例: --month 6 / --month 6 7）。"
+             "指定時は現在月までの制限を適用しない。省略時は当月まで全て",
+    )
     args = ap.parse_args()
+
+    if args.month:
+        invalid = [m for m in args.month if not 1 <= m <= 12]
+        if invalid:
+            print(f"ERROR: --month には 1〜12 を指定してください: {invalid}")
+            return 1
 
     missing = [
         k for k in ("SUPABASE_URL", "SUPABASE_KEY", "SUPABASE_SERVICE_ROLE_KEY")
@@ -218,9 +240,13 @@ def main() -> int:
         return 1
 
     today = date.today()
-    months = _target_months(ROOT, today)
+    months = _target_months(ROOT, today, only=args.month)
     if not months:
-        print(f"対象となる月フォルダがありません: {ROOT}")
+        if args.month:
+            print(f"指定された月のフォルダが見つかりません: "
+                  f"{'/'.join(str(m) + '月' for m in sorted(args.month))} ({ROOT})")
+        else:
+            print(f"対象となる月フォルダがありません: {ROOT}")
         return 0
 
     year = _folder_year(ROOT) or today.year
@@ -232,7 +258,10 @@ def main() -> int:
 
     mode_label = "全件再処理（上書き）" if args.force else "未登録のみ"
     print(f"対象フォルダ: {ROOT}")
-    print(f"対象月      : {months[0][0]}月 〜 {months[-1][0]}月（基準日 {today}）")
+    if args.month:
+        print(f"対象月      : {'/'.join(str(m) + '月' for m, _ in months)}（--month 指定）")
+    else:
+        print(f"対象月      : {months[0][0]}月 〜 {months[-1][0]}月（基準日 {today}）")
     print(f"モード      : {mode_label}")
     if not args.force:
         print(f"登録済み    : {len(registered)} 件（{year}年）")
